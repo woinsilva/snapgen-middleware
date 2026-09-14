@@ -57,6 +57,80 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         default:
           $ref: '#/components/responses/SnapGenError'
+  /video/models:
+    get:
+      operationId: getVideoModels
+      summary: List supported video models and capabilities
+      description: Use before generation when model capabilities or compatible parameters are unknown.
+      security:
+        - MiddlewareApiKey: []
+      responses:
+        '200':
+          description: Safe model capability registry
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [models]
+                properties:
+                  models:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VideoModel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /video/extend:
+    post:
+      operationId: extendVideo
+      summary: Extend an existing generated video
+      description: Use only when the selected model reports supportsExtend=true. The source must be an existing SnapGen generation UUID.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtendVideoRequest'
+      responses:
+        '200':
+          description: Extension accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoOperation'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/SnapGenError'
+  /video/storyboard:
+    post:
+      operationId: createVideoStoryboard
+      summary: Create a multi-scene Grok storyboard video
+      description: Creates 2-10 chained Grok scenes. Each scene is 6 or 10 seconds and total duration cannot exceed 45 seconds.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoryboardRequest'
+      responses:
+        '200':
+          description: Storyboard accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoOperation'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/SnapGenError'
   /video/{uuid}:
     get:
       operationId: getVideoGenerationStatus
@@ -102,29 +176,81 @@ components:
           maxLength: 10000
         model:
           type: string
-          enum: [veo-3.1, veo-3.1-fast, veo-2, veo-3.1-lite, omni-flash]
+          description: Use getVideoModels to select a supported model and compatible parameters.
+          enum: [veo-3.1, veo-3.1-fast, veo-2, veo-3.1-lite, omni-flash, grok-3, grok-lower, seedance-2, seedance-2-omni, seedance-2-mini, seedance-2-5-omni, flux-3, minimax-h3, kling-video-3-0, kling-video-2-6, kling-video-o1, kling-video-2-5, kling-video-2-1-10s, kling-video-2-1-5s, kling-video-1-6-10s, kling-video-1-6-5s]
         duration:
           type: integer
-          enum: [4, 6, 8, 10]
-          default: 8
+          minimum: 3
+          maximum: 30
+          description: Model-specific. Omit to use the selected model default.
         resolution:
           type: string
-          enum: [720p, 1080p]
-          default: 720p
+          enum: [480p, 720p, 1080p]
+          description: Model-specific. Some models derive resolution from mode or do not accept this field.
         aspect_ratio:
           type: string
-          enum: ['16:9', '9:16']
-          default: '16:9'
+          description: Model-specific. Use getVideoModels for accepted values.
         mode_image:
           type: string
           enum: [frame, ingredient]
         ref_images:
           type: array
           description: HTTP(S) image URLs, in start/end-frame order when mode_image is frame.
-          maxItems: 3
+          maxItems: 14
           items:
             type: string
             format: uri
+        mode:
+          type: string
+          description: Optional model-specific quality or generation mode.
+        skip_audio:
+          type: boolean
+          description: Grok-only option. True requests a silent video.
+    ExtendVideoRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt, model, source_uuid]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        model:
+          type: string
+        source_uuid:
+          type: string
+          format: uuid
+    StoryboardRequest:
+      type: object
+      additionalProperties: false
+      required: [scenes]
+      properties:
+        model:
+          type: string
+          enum: [grok-video, grok-3]
+          default: grok-video
+        scenes:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required: [prompt, duration]
+            properties:
+              prompt:
+                type: string
+              duration:
+                type: integer
+                enum: [6, 10]
+        aspect_ratio:
+          type: string
+          enum: [landscape, portrait, square]
+          default: landscape
+        resolution:
+          type: string
+          enum: [480p, 720p]
+          default: 480p
     VideoGeneration:
       type: object
       required: [uuid, status, provider, model]
@@ -155,13 +281,59 @@ components:
           minimum: 0
           maximum: 100
         videoUrl:
-          type: [string, 'null']
-          format: uri
+          anyOf:
+            - type: string
+              format: uri
+            - type: 'null'
         provider:
           type: string
           const: snapgen
         error:
           type: string
+    VideoOperation:
+      type: object
+      required: [uuid, status, provider, operation, model]
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: processing
+        provider:
+          type: string
+          const: snapgen
+        operation:
+          type: string
+          enum: [extend, storyboard]
+        model:
+          type: string
+    VideoModel:
+      type: object
+      required: [id, family, supportsTextToVideo, supportsImageToVideo, supportsExtend, resolutions, aspectRatios, durations, modes, maxReferenceImages]
+      properties:
+        id:
+          type: string
+        family:
+          type: string
+        supportsTextToVideo:
+          type: boolean
+        supportsImageToVideo:
+          type: boolean
+        supportsExtend:
+          type: boolean
+        resolutions:
+          type: array
+          items: { type: string }
+        aspectRatios:
+          type: array
+          items: { type: string }
+        durations: {}
+        modes:
+          type: array
+          items: { type: string }
+        maxReferenceImages:
+          type: integer
     Error:
       type: object
       required: [error]

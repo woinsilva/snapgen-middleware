@@ -1,43 +1,159 @@
-# SnapGen Middleware
+# SnapGen Middleware V2
 
-Middleware stateless em Node.js + TypeScript para integrar uma GPT Action ao SnapGen. A API pública recebe JSON, valida o contrato e converte internamente a geração para `multipart/form-data`, sem expor a credencial do SnapGen.
+Middleware stateless em Node.js + TypeScript para integrar uma Custom GPT Action aos modelos de vídeo do SnapGen. A API pública recebe JSON, aplica validação específica por modelo e converte cada operação para o formato multipart documentado pelo SnapGen.
 
-## Arquitetura de produção
-
-Deploy:
+## Arquitetura
 
 ```text
-GitHub
-  -> deploy pelo Render
-  -> snapgen-middleware
-  -> SnapGen
-```
+GitHub -> deploy automático no Render -> snapgen-middleware -> SnapGen
 
-Runtime:
-
-```text
 ChatGPT GPT Action
   -> HTTPS + MIDDLEWARE_API_KEY
   -> https://snapgen-middleware.onrender.com
-  -> snapgen-middleware
+  -> registry + adapter do modelo
   -> multipart/form-data + SNAPGEN_API_KEY
-  -> SnapGen API
-  -> Veo
+  -> SnapGen -> provedor de vídeo
 ```
 
-O Render é o ambiente de produção e usa o `Dockerfile` do projeto. O servidor lê `PORT` do ambiente, usa `3000` como fallback local e escuta em `0.0.0.0`.
+O `VideoModelRegistry` concentra capacidades, defaults, validação e seleção de endpoint. O controller permanece desacoplado do SnapGen pela interface `VideoProvider`.
 
-`POST /video/generate` e `GET /video/:uuid` são independentes da implementação do provedor por meio da interface `VideoProvider`. Isso permite adicionar outros provedores no futuro mantendo o contrato público.
+## Compatibilidade V1
 
-Cada requisição aceita opcionalmente `x-request-id`. Quando ausente, o middleware gera um UUID, devolve-o no mesmo header e o encaminha ao SnapGen. Os logs são JSON estruturado e não contêm prompts, headers ou API keys.
+Os endpoints V1 continuam disponíveis sem alterações:
+
+- `POST /video/generate`
+- `GET /video/:uuid`
+- `GET /health`
+- `GET /privacy`
+
+O payload V1 de Veo e sua resposta normalizada continuam válidos. Clientes existentes não precisam migrar. A V2 apenas amplia os modelos e adiciona operações.
+
+## Endpoints V2
+
+Todos os endpoints `/video/*` exigem `x-api-key: MIDDLEWARE_API_KEY`.
+
+### `GET /video/models`
+
+Lista modelos e capacidades seguras. Consulte-o quando o modelo ou os parâmetros compatíveis não forem conhecidos.
+
+```json
+{
+  "models": [
+    {
+      "id": "veo-3.1-fast",
+      "family": "veo",
+      "supportsTextToVideo": true,
+      "supportsImageToVideo": true,
+      "supportsExtend": true,
+      "resolutions": ["720p", "1080p"],
+      "aspectRatios": ["16:9"],
+      "durations": [8],
+      "modes": [],
+      "maxReferenceImages": 3
+    }
+  ]
+}
+```
+
+### `POST /video/generate`
+
+Geração text-to-video ou image-to-video:
+
+```json
+{
+  "prompt": "A cinematic car driving along a coastal road",
+  "model": "veo-3.1-fast",
+  "duration": 8,
+  "resolution": "720p",
+  "aspect_ratio": "16:9",
+  "mode_image": "frame",
+  "ref_images": ["https://example.com/start.jpg"]
+}
+```
+
+Resposta preservada da V1:
+
+```json
+{
+  "uuid": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "processing",
+  "provider": "snapgen",
+  "model": "veo-3.1-fast"
+}
+```
+
+Cada URL `ref_images` é repetida no multipart. Para Grok, o adapter usa o campo documentado `file_urls`; nos demais modelos habilitados usa `ref_images`. Nunca é enviado `ref_images[]` ou JSON arbitrário.
+
+### `POST /video/extend`
+
+Extende uma geração existente. O UUID de origem é convertido internamente para o campo SnapGen `ref_history`.
+
+```json
+{
+  "prompt": "Continue the scene as the car enters the city",
+  "model": "veo-3.1-fast",
+  "source_uuid": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+```json
+{
+  "uuid": "7d9f6f50-18a1-4ff0-bd1f-5a83639928ad",
+  "status": "processing",
+  "provider": "snapgen",
+  "operation": "extend",
+  "model": "veo-3.1-fast"
+}
+```
+
+Veo, Grok 3 e Seedance possuem extensão habilitada conforme a documentação fornecida. O modelo, duração, resolução e aspecto efetivos são herdados pelo SnapGen da geração de origem.
+
+### `POST /video/storyboard`
+
+Cria um storyboard Grok de 2 a 10 cenas. Cada cena dura 6 ou 10 segundos e o total não pode ultrapassar 45 segundos.
+
+```json
+{
+  "model": "grok-video",
+  "aspect_ratio": "landscape",
+  "resolution": "720p",
+  "scenes": [
+    { "prompt": "Sunrise over a mountain range", "duration": 6 },
+    { "prompt": "A river flows into the valley", "duration": 10 }
+  ]
+}
+```
+
+### `GET /video/:uuid`
+
+Consulta qualquer geração, extensão ou storyboard. Códigos SnapGen `0/1` são normalizados para `processing`, `2` para `completed` e `3/-2` para `failed`. `videoUrl` só é devolvida quando documentada na resposta concluída.
+
+## Modelos habilitados
+
+- Veo: `veo-3.1`, `veo-3.1-fast`, `veo-3.1-lite`, `veo-2`, `omni-flash`
+- Grok: `grok-3`, `grok-lower`
+- Seedance: `seedance-2`, `seedance-2-omni`, `seedance-2-mini`, `seedance-2-5-omni`
+- Flux: `flux-3`
+- MiniMax: `minimax-h3`
+- Kling: `kling-video-3-0`, `kling-video-2-6`, `kling-video-o1`, `kling-video-2-5`, `kling-video-2-1-10s`, `kling-video-2-1-5s`, `kling-video-1-6-10s`, `kling-video-1-6-5s`
+
+Consulte `GET /video/models` ou [docs/snapgen-model-capabilities.md](docs/snapgen-model-capabilities.md) para combinações de duração, resolução, aspecto, modo, referências e extensão.
+
+## Uploads, referências e webhooks
+
+A V2 aceita URLs HTTP(S) de imagens de referência e permanece stateless. Não há endpoint de upload: o filesystem efêmero do Render não é um storage público confiável, e nenhum serviço pago foi imposto ao projeto.
+
+Uploads futuros devem ficar atrás de uma abstração de storage e implementar limite de tamanho, allowlist MIME, nomes aleatórios, expiração e cleanup. Modelos Kling motion/edit não estão habilitados porque exigem upload e inspeção de vídeo.
+
+O polling continua sendo o mecanismo de status. Webhooks SnapGen exigem configuração externa, verificação criptográfica e idempotência; por isso estão documentados como evolução futura, não expostos parcialmente.
+
+## Retry e segurança de cobrança
+
+- POSTs de geração, extensão e storyboard nunca recebem retry automático.
+- Somente o GET idempotente de status tenta novamente em HTTP 429 ou 5xx.
+- O UUID existente deve sempre ser reutilizado durante polling.
 
 ## Configuração
-
-Copie `.env.example` para `.env` somente na primeira instalação. Nunca substitua um `.env` já configurado.
-
-```powershell
-Copy-Item .env.example .env
-```
 
 ```env
 PORT=3000
@@ -52,159 +168,96 @@ NODE_ENV=development
 LOG_LEVEL=info
 ```
 
-- `SNAPGEN_API_KEY`: usada exclusivamente pelo backend para chamar o SnapGen.
-- `MIDDLEWARE_API_KEY`: exigida em `x-api-key` nas rotas `/video/*`.
-- `SNAPGEN_BASE_URL`: origem da API, sem `/uapi/v1` no final.
-- `SNAPGEN_TIMEOUT_MS`: timeout upstream; expiração retorna HTTP 504.
-- `ALLOWED_ORIGINS`: `*` ou origins separadas por vírgula.
-- `RATE_LIMIT_WINDOW_MS` e `RATE_LIMIT_MAX`: proteção das rotas de vídeo; `/health` não é limitado.
-- `LOG_LEVEL`: `debug`, `info`, `warn`, `error` ou `silent`.
+O `.env` real é ignorado pelo Git e pelo contexto Docker. Nunca configure `SNAPGEN_API_KEY` no GPT.
 
-O `.env` real é excluído pelo `.gitignore` e `.dockerignore`.
-
-## Deploy no Render
+## Render
 
 1. Conecte o repositório GitHub ao Render.
-2. Crie um Web Service usando o `Dockerfile` do repositório.
-3. Configure no Render todas as variáveis de ambiente acima. Use `NODE_ENV=production`.
-4. Não fixe `PORT`: o Render fornece esse valor automaticamente.
-5. Após o deploy, valide:
+2. Crie um Web Service usando o `Dockerfile`.
+3. Cadastre as variáveis acima e use `NODE_ENV=production`.
+4. Não fixe `PORT`; o Render fornece esse valor.
+5. Valide `https://snapgen-middleware.onrender.com/health`.
 
-```text
-https://snapgen-middleware.onrender.com/health
-```
-
-O Docker local não é necessário para produção.
+O servidor escuta em `0.0.0.0` e usa a porta do ambiente com fallback local 3000.
 
 ## Desenvolvimento local
-
-Com Node.js 22 ou superior:
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Validação local:
+Validação:
 
 ```powershell
 npm run typecheck
 npm run lint
 npm run build
 npm test
+docker compose config
 ```
 
-Docker permanece disponível opcionalmente e só é iniciado manualmente pelo desenvolvedor:
+Docker local é opcional e iniciado somente quando o desenvolvedor decidir:
 
 ```powershell
 docker compose up -d --build
-docker compose ps
-docker compose logs -f
-docker compose down
 ```
-
-## Endpoints
-
-### Health
-
-```bash
-curl https://snapgen-middleware.onrender.com/health
-```
-
-Resposta:
-
-```json
-{"status":"ok"}
-```
-
-### Gerar vídeo
-
-```bash
-curl -X POST https://snapgen-middleware.onrender.com/video/generate \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: SUA_MIDDLEWARE_API_KEY" \
-  -H "x-request-id: identificador-opcional" \
-  -d '{
-    "prompt": "A red sports car driving along a coastal road at sunset",
-    "model": "veo-3.1-fast",
-    "duration": 8,
-    "resolution": "720p",
-    "aspect_ratio": "16:9"
-  }'
-```
-
-Resposta normalizada quando o SnapGen aceita a criação e retorna `uuid` ou `conversion_uuid`:
-
-```json
-{
-  "uuid": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "processing",
-  "provider": "snapgen",
-  "model": "veo-3.1-fast"
-}
-```
-
-O status presente na resposta de criação não é interpretado como status de histórico. O objetivo desse endpoint é confirmar o aceite e devolver o identificador.
-
-### Consultar geração
-
-```bash
-curl https://snapgen-middleware.onrender.com/video/UUID \
-  -H "x-api-key: SUA_MIDDLEWARE_API_KEY"
-```
-
-No endpoint de histórico, o SnapGen documenta `1` como processamento, `2` como concluído e `3` como falha. O middleware converte esses valores para `processing`, `completed` e `failed`. `videoUrl` vem exclusivamente de `generated_video[0].video_url` e só é exposta quando a geração está concluída.
-
-Para imagens de referência, cada URL HTTP(S) é enviada como um campo multipart separado chamado exatamente `ref_images`, conforme a documentação do SnapGen. O limite é 2 em `frame` e 3 em `ingredient`.
 
 ## GPT Action
 
-O arquivo `openapi.yaml` descreve o middleware, não a API do SnapGen. O GPT envia somente `application/json`.
+Importe `openapi.yaml`. No GPT Builder configure **Authentication → API Key → Custom**, header `x-api-key`, usando `MIDDLEWARE_API_KEY`.
 
-Privacy Policy pública para configuração da Custom GPT Action:
+Privacy Policy pública:
 
 https://snapgen-middleware.onrender.com/privacy
 
-No GPT Builder:
-
-1. Importe `openapi.yaml`.
-2. Em **Authentication**, selecione **API Key**.
-3. Use **Type: Custom**.
-4. Configure o header `x-api-key`.
-5. Use o valor de `MIDDLEWARE_API_KEY`.
-
-Nunca configure `SNAPGEN_API_KEY` no GPT.
+### Instructions V2 para o Custom GPT
 
 ```text
-GPT -- MIDDLEWARE_API_KEY --> Render/middleware -- SNAPGEN_API_KEY --> SnapGen
-```
+Quando o usuário pedir um vídeo, preserve os parâmetros explicitamente fornecidos.
 
-### Instructions sugeridas para o GPT
+Chame getVideoModels quando precisar descobrir modelos, capacidades ou combinações compatíveis. Nunca invente capacidades. Se os parâmetros forem incompatíveis, explique a incompatibilidade antes de gerar e ofereça apenas opções retornadas pela API.
 
-```text
-Quando o usuário solicitar um vídeo, chame generateVideo. Nunca chame o SnapGen diretamente.
+Use generateVideo para text-to-video. Quando houver uma URL HTTP(S) válida de imagem e o modelo suportar image-to-video, envie-a em ref_images. Não invente ou altere URLs.
 
-Respeite model, resolution, duration, aspect_ratio, mode_image e ref_images fornecidos pelo usuário. Não altere parâmetros explícitos sem necessidade.
+Use extendVideo somente quando o usuário pedir continuação, houver um UUID existente e o modelo informar supportsExtend=true. Não use geração nova como substituto silencioso para extend.
 
-Depois que generateVideo retornar um UUID, informe que a geração foi iniciada. Use getVideoGenerationStatus com o mesmo UUID para consultar o andamento.
+Use createVideoStoryboard para pedidos explícitos de múltiplas cenas quando as restrições de Grok forem atendidas.
 
-Se o status for processing, informe que o vídeo ainda está sendo processado e apresente o progresso retornado. Não invente prazo de conclusão.
+Após receber um UUID, informe que a operação foi iniciada. Use getVideoGenerationStatus com o mesmo UUID para consultar o andamento.
 
-Se o status for completed, informe videoUrl somente quando a operação retornar uma URL não nula. Nunca invente uma URL.
+Se o status for processing, informe o progresso e continue reutilizando o UUID. Nunca gere novamente apenas porque ainda está processando e nunca repita automaticamente uma operação paga.
+
+Se o status for completed, entregue videoUrl somente quando a API retornar uma URL não nula. Nunca invente uma URL.
 
 Se o status for failed, informe o erro retornado e não afirme que o vídeo foi criado.
 
-Nunca revele ou solicite SNAPGEN_API_KEY. A Action usa somente a chave do middleware configurada pelo administrador.
+Nunca revele ou solicite SNAPGEN_API_KEY. A Action usa somente MIDDLEWARE_API_KEY configurada pelo administrador.
 ```
 
-## Segurança e troubleshooting
+## Observabilidade e segurança
 
-- Helmet aplica headers defensivos e o JSON é limitado a 1 MB.
-- Zod rejeita payloads inválidos ou campos desconhecidos.
-- Stack traces não são retornadas em produção.
-- O container executa como usuário `node`, não como root.
-- HTTP 401 do middleware: confira `MIDDLEWARE_API_KEY`.
-- HTTP 401/403 do SnapGen: confira `SNAPGEN_API_KEY` e o estado da conta.
-- HTTP 429: aguarde a janela do rate limit ou ajuste as variáveis correspondentes.
-- HTTP 502 com resposta inválida: procure o log `snapgen_request`, que registra apenas chaves do body, tipo/valor seguro do status, UUID e duração.
+- Request ID recebido ou gerado é devolvido e propagado ao SnapGen.
+- Logs estruturados registram operação, modelo, provider, input mode, UUID, status upstream e duração, sem prompt completo ou secrets.
+- Helmet, CORS configurável, limite JSON de 1 MB, Zod, rate limit e timeout permanecem ativos.
+- O container executa como usuário não-root.
+
+## Migração V1 para V2
+
+Nenhuma mudança é necessária para consumidores V1. Para adotar recursos V2:
+
+1. Consulte `/video/models`.
+2. Continue usando `/video/generate` com o modelo escolhido.
+3. Use `/video/extend` somente com modelos compatíveis.
+4. Use `/video/storyboard` para cenas Grok.
+5. Continue consultando qualquer UUID em `/video/:uuid`.
+
+## Troubleshooting
+
+- `UNSUPPORTED_MODEL`: consulte `/video/models` e use um ID retornado.
+- `VALIDATION_ERROR`: corrija o campo indicado conforme as capacidades do modelo.
+- `UNSUPPORTED_OPERATION`: o modelo não oferece a operação solicitada.
+- HTTP 401: confira `MIDDLEWARE_API_KEY`; erros de credencial upstream exigem conferir `SNAPGEN_API_KEY` no Render.
+- HTTP 429: aguarde a janela indicada; não repita POSTs pagos automaticamente.
+- HTTP 502: procure o log seguro `snapgen_request` pelo `requestId`.
 - HTTP 504: verifique conectividade ou ajuste `SNAPGEN_TIMEOUT_MS`.

@@ -121,8 +121,9 @@ describe('middleware API', () => {
       .set('x-api-key', env.MIDDLEWARE_API_KEY).send({ prompt: 'A cinematic lake', model: 'veo-3.1-fast' });
     expect(response.status).toBe(status);
     expect(response.body.error).toBe('SnapGen request failed');
+    expect(response.body.code).toBe(status === 429 ? 'RATE_LIMITED' : status === 401 ? 'AUTH_ERROR' : 'UPSTREAM_ERROR');
     expect(JSON.stringify(response.body)).not.toContain(env.SNAPGEN_API_KEY);
-    expect(response.body.details.detail.api_key).toBe('[REDACTED]');
+    expect(response.body.details.message).toBe('bad [REDACTED]');
   });
 
   it('returns the documented 504 response when SnapGen times out', async () => {
