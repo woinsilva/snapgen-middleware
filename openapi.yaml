@@ -4,8 +4,8 @@ info:
   version: 1.0.0
   description: JSON API for generating and checking SnapGen videos without exposing the SnapGen credential.
 servers:
-  - url: https://video.example.com
-    description: Example only. Replace with the public HTTPS hostname configured in Cloudflare.
+  - url: https://snapgen-middleware.onrender.com
+    description: Production deployment on Render.
 paths:
   /health:
     get:

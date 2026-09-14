@@ -1,32 +1,39 @@
 # SnapGen Middleware
 
-Middleware stateless em Node.js + TypeScript. Ele recebe JSON, valida o contrato, converte a geração para `multipart/form-data` e chama o SnapGen sem expor a credencial do provedor.
+Middleware stateless em Node.js + TypeScript para integrar uma GPT Action ao SnapGen. A API pública recebe JSON, valida o contrato e converte internamente a geração para `multipart/form-data`, sem expor a credencial do SnapGen.
 
-## Arquitetura
+## Arquitetura de produção
+
+Deploy:
 
 ```text
-Cliente/GPT Action
-  -> Express (request ID, Helmet, CORS, rate limit e autenticação)
-  -> VideoProvider
-  -> SnapGenVideoProvider
-  -> API SnapGen
+GitHub
+  -> deploy pelo Render
+  -> snapgen-middleware
+  -> SnapGen
 ```
 
-`POST /video/generate` e `GET /video/:uuid` permanecem estáveis. A interface `VideoProvider` permite adicionar Google Veo, Kling, Seedance ou ComfyUI futuramente sem acoplar o controller a esses serviços.
+Runtime:
 
-Cada requisição aceita opcionalmente `x-request-id`. Quando ausente, o middleware gera um UUID, devolve-o no mesmo header e o encaminha ao SnapGen. Logs são JSON estruturado e não contêm prompts, headers ou API keys.
+```text
+ChatGPT GPT Action
+  -> HTTPS + MIDDLEWARE_API_KEY
+  -> https://snapgen-middleware.onrender.com
+  -> snapgen-middleware
+  -> multipart/form-data + SNAPGEN_API_KEY
+  -> SnapGen API
+  -> Veo
+```
 
-Conforme a documentação SnapGen fornecida em `docs-content.zip`, cada URL de `ref_images` é enviada em um campo multipart separado chamado exatamente `ref_images`, preservando a ordem. O limite é 2 URLs HTTP(S) em `frame` e 3 em `ingredient`. Não há armazenamento local nem banco de dados.
+O Render é o ambiente de produção e usa o `Dockerfile` do projeto. O servidor lê `PORT` do ambiente, usa `3000` como fallback local e escuta em `0.0.0.0`.
 
-## Pré-requisitos
+`POST /video/generate` e `GET /video/:uuid` são independentes da implementação do provedor por meio da interface `VideoProvider`. Isso permite adicionar outros provedores no futuro mantendo o contrato público.
 
-- Node.js 22 ou superior
-- npm
-- Docker Desktop para execução em container
+Cada requisição aceita opcionalmente `x-request-id`. Quando ausente, o middleware gera um UUID, devolve-o no mesmo header e o encaminha ao SnapGen. Os logs são JSON estruturado e não contêm prompts, headers ou API keys.
 
 ## Configuração
 
-Copie `.env.example` para `.env` somente na primeira instalação. Não substitua um `.env` já configurado.
+Copie `.env.example` para `.env` somente na primeira instalação. Nunca substitua um `.env` já configurado.
 
 ```powershell
 Copy-Item .env.example .env
@@ -43,66 +50,56 @@ RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX=30
 NODE_ENV=development
 LOG_LEVEL=info
-CLOUDFLARE_TUNNEL_TOKEN=
 ```
 
-- `SNAPGEN_API_KEY`: segredo usado exclusivamente pelo backend para chamar o SnapGen.
-- `MIDDLEWARE_API_KEY`: segredo exigido no header `x-api-key` das rotas `/video/*`.
+- `SNAPGEN_API_KEY`: usada exclusivamente pelo backend para chamar o SnapGen.
+- `MIDDLEWARE_API_KEY`: exigida em `x-api-key` nas rotas `/video/*`.
 - `SNAPGEN_BASE_URL`: origem da API, sem `/uapi/v1` no final.
 - `SNAPGEN_TIMEOUT_MS`: timeout upstream; expiração retorna HTTP 504.
-- `ALLOWED_ORIGINS`: `*` ou lista separada por vírgula.
-- `RATE_LIMIT_WINDOW_MS` e `RATE_LIMIT_MAX`: janela e limite das rotas de vídeo. `/health` não é limitado.
+- `ALLOWED_ORIGINS`: `*` ou origins separadas por vírgula.
+- `RATE_LIMIT_WINDOW_MS` e `RATE_LIMIT_MAX`: proteção das rotas de vídeo; `/health` não é limitado.
 - `LOG_LEVEL`: `debug`, `info`, `warn`, `error` ou `silent`.
-- `CLOUDFLARE_TUNNEL_TOKEN`: necessário somente no Compose opcional do túnel.
 
-O `.env` está excluído pelo `.gitignore` e `.dockerignore`.
+O `.env` real é excluído pelo `.gitignore` e `.dockerignore`.
 
-## Execução local
+## Deploy no Render
+
+1. Conecte o repositório GitHub ao Render.
+2. Crie um Web Service usando o `Dockerfile` do repositório.
+3. Configure no Render todas as variáveis de ambiente acima. Use `NODE_ENV=production`.
+4. Não fixe `PORT`: o Render fornece esse valor automaticamente.
+5. Após o deploy, valide:
+
+```text
+https://snapgen-middleware.onrender.com/health
+```
+
+O Docker local não é necessário para produção.
+
+## Desenvolvimento local
+
+Com Node.js 22 ou superior:
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Build local:
+Validação local:
 
 ```powershell
 npm run typecheck
 npm run lint
 npm run build
 npm test
-npm start
 ```
 
-O serviço fica em `http://localhost:3000`.
-
-## Docker e inicialização automática no Windows
-
-No Docker Desktop, abra:
-
-**Settings → General → Start Docker Desktop when you sign in**
-
-Execute uma vez:
+Docker permanece disponível opcionalmente e só é iniciado manualmente pelo desenvolvedor:
 
 ```powershell
 docker compose up -d --build
-```
-
-Como o serviço usa `restart: unless-stopped`, o fluxo esperado passa a ser:
-
-```text
-Windows inicia
-  -> Docker Desktop inicia
-  -> Docker Engine inicia
-  -> snapgen-middleware inicia
-```
-
-Comandos úteis:
-
-```powershell
 docker compose ps
 docker compose logs -f
-docker compose restart
 docker compose down
 ```
 
@@ -111,13 +108,19 @@ docker compose down
 ### Health
 
 ```bash
-curl http://localhost:3000/health
+curl https://snapgen-middleware.onrender.com/health
+```
+
+Resposta:
+
+```json
+{"status":"ok"}
 ```
 
 ### Gerar vídeo
 
 ```bash
-curl -X POST http://localhost:3000/video/generate \
+curl -X POST https://snapgen-middleware.onrender.com/video/generate \
   -H "Content-Type: application/json" \
   -H "x-api-key: SUA_MIDDLEWARE_API_KEY" \
   -H "x-request-id: identificador-opcional" \
@@ -130,7 +133,7 @@ curl -X POST http://localhost:3000/video/generate \
   }'
 ```
 
-Resposta normalizada:
+Resposta normalizada quando o SnapGen aceita a criação e retorna `uuid` ou `conversion_uuid`:
 
 ```json
 {
@@ -141,118 +144,63 @@ Resposta normalizada:
 }
 ```
 
+O status presente na resposta de criação não é interpretado como status de histórico. O objetivo desse endpoint é confirmar o aceite e devolver o identificador.
+
 ### Consultar geração
 
 ```bash
-curl http://localhost:3000/video/UUID \
+curl https://snapgen-middleware.onrender.com/video/UUID \
   -H "x-api-key: SUA_MIDDLEWARE_API_KEY"
 ```
 
-O SnapGen documenta `status=1` como processamento, `2` como concluído e `3` como falha. O middleware converte esses valores para `processing`, `completed` e `failed`. `videoUrl` vem exclusivamente de `generated_video[0].video_url` e só é exposta quando a geração está concluída.
+No endpoint de histórico, o SnapGen documenta `1` como processamento, `2` como concluído e `3` como falha. O middleware converte esses valores para `processing`, `completed` e `failed`. `videoUrl` vem exclusivamente de `generated_video[0].video_url` e só é exposta quando a geração está concluída.
 
-## Cloudflare Tunnel opcional
+Para imagens de referência, cada URL HTTP(S) é enviada como um campo multipart separado chamado exatamente `ref_images`, conforme a documentação do SnapGen. O limite é 2 em `frame` e 3 em `ingredient`.
 
-Um GPT hospedado não acessa localhost. O túnel permite o fluxo:
+## GPT Action
 
-```text
-ChatGPT
-  -> HTTPS Cloudflare
-  -> Cloudflare Tunnel
-  -> http://snapgen-middleware:3000
-  -> SnapGen
-```
+O arquivo `openapi.yaml` descreve o middleware, não a API do SnapGen. O GPT envia somente `application/json`.
 
-Não é necessário abrir porta no roteador. Crie um túnel gerenciado no painel Cloudflare, configure o hostname público para o serviço `http://snapgen-middleware:3000` e adicione o token ao `.env`:
+No GPT Builder:
 
-```env
-CLOUDFLARE_TUNNEL_TOKEN=seu-token-do-tunel
-```
-
-Inicie middleware e túnel:
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --build
-```
-
-Para parar ambos:
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.tunnel.yml down
-```
-
-Ambos usam `restart: unless-stopped` e reiniciam com o Docker. O comando Docker normal não exige token e continua funcionando sem o túnel.
-
-### Quick Tunnel para desenvolvimento
-
-O Quick Tunnel cria uma URL pública temporária `https://xxxxx.trycloudflare.com` sem exigir domínio ou `CLOUDFLARE_TUNNEL_TOKEN`. O Named Tunnel acima continua disponível separadamente para uso futuro em produção.
-
-Inicie o middleware e o Quick Tunnel:
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.quick-tunnel.yml up -d --build
-```
-
-Veja os logs e procure pela URL `trycloudflare.com`:
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.quick-tunnel.yml logs -f cloudflared-quick
-```
-
-Para mostrar somente a URL no PowerShell:
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.quick-tunnel.yml logs cloudflared-quick | Select-String -Pattern 'https://[-a-z0-9]+\.trycloudflare\.com'
-```
-
-A URL é efêmera e pode mudar sempre que o container do Quick Tunnel for recriado. Para pará-lo junto com o middleware:
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.quick-tunnel.yml down
-```
-
-## Configuração da GPT Action
-
-1. Publique o middleware por HTTPS.
-2. Troque `https://video.example.com` em `openapi.yaml` pelo hostname público.
-3. Importe `openapi.yaml` no GPT Builder.
-4. Em **Authentication**, escolha:
-   - API Key
-   - Type: Custom
-   - Header: `x-api-key`
-   - Value: o valor de `MIDDLEWARE_API_KEY`
+1. Importe `openapi.yaml`.
+2. Em **Authentication**, selecione **API Key**.
+3. Use **Type: Custom**.
+4. Configure o header `x-api-key`.
+5. Use o valor de `MIDDLEWARE_API_KEY`.
 
 Nunca configure `SNAPGEN_API_KEY` no GPT.
 
 ```text
-GPT -- MIDDLEWARE_API_KEY --> middleware -- SNAPGEN_API_KEY --> SnapGen
+GPT -- MIDDLEWARE_API_KEY --> Render/middleware -- SNAPGEN_API_KEY --> SnapGen
 ```
 
-### Instructions prontas para o GPT
+### Instructions sugeridas para o GPT
 
 ```text
-Quando o usuário solicitar a geração de um vídeo, chame generateVideo. Nunca chame o SnapGen diretamente.
+Quando o usuário solicitar um vídeo, chame generateVideo. Nunca chame o SnapGen diretamente.
 
-Respeite model, resolution, duration, aspect_ratio, mode_image e ref_images explicitamente fornecidos pelo usuário. Não altere parâmetros explícitos sem uma razão necessária e informada.
+Respeite model, resolution, duration, aspect_ratio, mode_image e ref_images fornecidos pelo usuário. Não altere parâmetros explícitos sem necessidade.
 
-Depois que generateVideo retornar um UUID, informe que a geração foi iniciada e preserve esse UUID. Use getVideoGenerationStatus com o mesmo UUID para consultar o andamento quando necessário ou quando o usuário pedir atualização.
+Depois que generateVideo retornar um UUID, informe que a geração foi iniciada. Use getVideoGenerationStatus com o mesmo UUID para consultar o andamento.
 
-Se o status for processing, diga claramente que o vídeo ainda está sendo processado e informe o progresso retornado. Não invente prazo de conclusão.
+Se o status for processing, informe que o vídeo ainda está sendo processado e apresente o progresso retornado. Não invente prazo de conclusão.
 
-Se o status for completed, informe videoUrl somente quando a operação tiver retornado uma URL não nula. Nunca invente, complete ou suponha uma URL de vídeo.
+Se o status for completed, informe videoUrl somente quando a operação retornar uma URL não nula. Nunca invente uma URL.
 
-Se o status for failed, informe o erro retornado pela operação e não afirme que um vídeo foi criado.
+Se o status for failed, informe o erro retornado e não afirme que o vídeo foi criado.
 
-Nunca revele, solicite ou mencione SNAPGEN_API_KEY. A autenticação da Action usa somente a chave do middleware configurada pelo administrador.
+Nunca revele ou solicite SNAPGEN_API_KEY. A Action usa somente a chave do middleware configurada pelo administrador.
 ```
 
 ## Segurança e troubleshooting
 
-- Helmet aplica headers defensivos; JSON é limitado a 1 MB.
-- Zod rejeita payloads desconhecidos ou inválidos.
+- Helmet aplica headers defensivos e o JSON é limitado a 1 MB.
+- Zod rejeita payloads inválidos ou campos desconhecidos.
 - Stack traces não são retornadas em produção.
 - O container executa como usuário `node`, não como root.
 - HTTP 401 do middleware: confira `MIDDLEWARE_API_KEY`.
-- HTTP 401/403 do SnapGen: confira `SNAPGEN_API_KEY` e a conta.
+- HTTP 401/403 do SnapGen: confira `SNAPGEN_API_KEY` e o estado da conta.
 - HTTP 429: aguarde a janela do rate limit ou ajuste as variáveis correspondentes.
+- HTTP 502 com resposta inválida: procure o log `snapgen_request`, que registra apenas chaves do body, tipo/valor seguro do status, UUID e duração.
 - HTTP 504: verifique conectividade ou ajuste `SNAPGEN_TIMEOUT_MS`.
-- Container não reinicia: confirme o início automático do Docker Desktop e que o container não foi parado manualmente.

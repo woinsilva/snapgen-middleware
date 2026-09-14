@@ -32,7 +32,16 @@ describe('middleware API', () => {
   it('uses a supplied request ID in the response and SnapGen call', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
       expect((init?.headers as Record<string, string>)['x-request-id']).toBe('trace-from-gpt');
-      return success({ uuid: generationUuid, status: 1 });
+      return success({
+        id: 2588,
+        uuid: generationUuid,
+        user_id: 3,
+        model_name: 'veo-3.1-fast',
+        input_text: 'A cinematic lake',
+        type: 'video',
+        status: 1,
+        status_percentage: 1,
+      });
     });
     const response = await request(appWithFetch(fetchMock)).post('/video/generate')
       .set('x-api-key', env.MIDDLEWARE_API_KEY).set('x-request-id', 'trace-from-gpt')
@@ -82,6 +91,15 @@ describe('middleware API', () => {
         prompt: 'A cinematic lake', model: 'veo-3.1-fast', duration: 8, resolution: '720p', aspect_ratio: '16:9',
         mode_image: 'frame', ref_images: ['https://example.com/start.png', 'https://example.com/end.png'],
       });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ uuid: generationUuid, status: 'processing', provider: 'snapgen', model: 'veo-3.1-fast' });
+  });
+
+  it('accepts a valid creation UUID without applying the history status mapper', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => success({ conversion_uuid: generationUuid, status: 'queued' }));
+    const response = await request(appWithFetch(fetchMock)).post('/video/generate')
+      .set('x-api-key', env.MIDDLEWARE_API_KEY)
+      .send({ prompt: 'A cinematic lake', model: 'veo-3.1-fast' });
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ uuid: generationUuid, status: 'processing', provider: 'snapgen', model: 'veo-3.1-fast' });
   });

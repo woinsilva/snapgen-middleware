@@ -35,6 +35,12 @@ function asRecord(value: unknown): UnknownRecord {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as UnknownRecord : {};
 }
 
+function responseUuid(value: UnknownRecord): string | undefined {
+  if (typeof value.uuid === 'string' && value.uuid) return value.uuid;
+  if (typeof value.conversion_uuid === 'string' && value.conversion_uuid) return value.conversion_uuid;
+  return undefined;
+}
+
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value) throw new SnapGenError(502, { message: `Invalid SnapGen response: missing ${field}` });
   return value;
@@ -74,8 +80,7 @@ export class SnapGenService implements VideoProvider {
     for (const imageUrl of input.ref_images) form.append('ref_images', imageUrl);
 
     const raw = asRecord(await this.request('/uapi/v1/video-gen/veo', { method: 'POST', body: form }, requestId, 'generateVideo'));
-    const uuid = requiredString(raw.uuid, 'uuid');
-    snapGenStatus(raw.status);
+    const uuid = requiredString(responseUuid(raw), 'uuid or conversion_uuid');
     return { uuid, status: 'processing', provider: 'snapgen', model: input.model };
   }
 
@@ -111,13 +116,20 @@ export class SnapGenService implements VideoProvider {
       });
       const body = redact(await responseBody(response), [this.env.SNAPGEN_API_KEY, this.env.MIDDLEWARE_API_KEY]);
       const bodyRecord = asRecord(body);
+      const upstreamStatusValue = bodyRecord.status;
+      const upstreamStatusType = upstreamStatusValue === null ? 'null' : Array.isArray(upstreamStatusValue) ? 'array' : typeof upstreamStatusValue;
+      const safeStatusValue = ['string', 'number', 'boolean'].includes(typeof upstreamStatusValue) ? upstreamStatusValue : undefined;
+      const generationUuid = responseUuid(bodyRecord);
       this.logger.info({
         event: 'snapgen_request',
         requestId,
         operation,
         upstreamStatus: response.status,
         durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
-        ...(typeof bodyRecord.uuid === 'string' ? { generationUuid: bodyRecord.uuid } : {}),
+        responseKeys: Object.keys(bodyRecord),
+        statusType: upstreamStatusType,
+        ...(safeStatusValue !== undefined ? { upstreamStatusValue: safeStatusValue } : {}),
+        ...(generationUuid ? { generationUuid } : {}),
       });
       if (!response.ok) throw new SnapGenError(response.status, body);
       return body;
