@@ -1,0 +1,9 @@
+services:
+  cloudflared-quick:
+    image: cloudflare/cloudflared:latest
+    container_name: snapgen-cloudflared-quick
+    command: tunnel --no-autoupdate --url http://snapgen-middleware:3000
+    depends_on:
+      snapgen-middleware:
+        condition: service_healthy
+    restart: unless-stopped

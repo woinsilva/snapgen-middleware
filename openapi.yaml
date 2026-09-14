@@ -1,0 +1,194 @@
+openapi: 3.1.0
+info:
+  title: SnapGen Video Middleware
+  version: 1.0.0
+  description: JSON API for generating and checking SnapGen videos without exposing the SnapGen credential.
+servers:
+  - url: https://video.example.com
+    description: Example only. Replace with the public HTTPS hostname configured in Cloudflare.
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Check middleware health
+      description: Use only to verify that the middleware is online.
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+  /video/generate:
+    post:
+      operationId: generateVideo
+      summary: Start a SnapGen video generation
+      description: Use when the user asks to create a video. Returns a UUID used to check asynchronous generation status.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateVideoRequest'
+            example:
+              prompt: A cinematic red sports car driving along a coastal road at sunset
+              model: veo-3.1-fast
+              duration: 8
+              resolution: 720p
+              aspect_ratio: '16:9'
+      responses:
+        '200':
+          description: SnapGen generation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoGeneration'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/SnapGenError'
+  /video/{uuid}:
+    get:
+      operationId: getVideoGenerationStatus
+      summary: Get a SnapGen generation by UUID
+      description: Use after generateVideo to check whether a generation is processing, completed, or failed. Never invent a video URL.
+      security:
+        - MiddlewareApiKey: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Normalized video generation status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoGenerationStatus'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/SnapGenError'
+components:
+  securitySchemes:
+    MiddlewareApiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+  schemas:
+    GenerateVideoRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt, model]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        model:
+          type: string
+          enum: [veo-3.1, veo-3.1-fast, veo-2, veo-3.1-lite, omni-flash]
+        duration:
+          type: integer
+          enum: [4, 6, 8, 10]
+          default: 8
+        resolution:
+          type: string
+          enum: [720p, 1080p]
+          default: 720p
+        aspect_ratio:
+          type: string
+          enum: ['16:9', '9:16']
+          default: '16:9'
+        mode_image:
+          type: string
+          enum: [frame, ingredient]
+        ref_images:
+          type: array
+          description: HTTP(S) image URLs, in start/end-frame order when mode_image is frame.
+          maxItems: 3
+          items:
+            type: string
+            format: uri
+    VideoGeneration:
+      type: object
+      required: [uuid, status, provider, model]
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: processing
+        provider:
+          type: string
+          const: snapgen
+        model:
+          type: string
+    VideoGenerationStatus:
+      type: object
+      required: [uuid, status, progress, videoUrl, provider]
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [processing, completed, failed]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        videoUrl:
+          type: [string, 'null']
+          format: uri
+        provider:
+          type: string
+          const: snapgen
+        error:
+          type: string
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        status:
+          type: integer
+        details: {}
+  responses:
+    Unauthorized:
+      description: Missing or invalid middleware API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Unauthorized
+    ValidationError:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SnapGenError:
+      description: Error returned while calling SnapGen
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
