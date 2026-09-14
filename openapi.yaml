@@ -25,6 +25,19 @@ paths:
                   status:
                     type: string
                     const: ok
+  /privacy:
+    get:
+      operationId: getPrivacyPolicy
+      summary: Get the public privacy policy
+      description: Returns the middleware privacy policy as an HTML document.
+      security: []
+      responses:
+        '200':
+          description: Privacy policy HTML
+          content:
+            text/html:
+              schema:
+                type: string
   /video/generate:
     post:
       operationId: generateVideo
