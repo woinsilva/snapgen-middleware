@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -45,6 +45,20 @@ describe('V3 secure media handling', () => {
       expect(await store.resolve(output)).toBe(join(outputDirectory, `${output.handle}.mp4`));
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
+
+  it('expires and cleans up temporary output files', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'v3-output-expiry-test-'));
+    const source = join(directory, 'source.mp4');
+    try {
+      await writeFile(source, new Uint8Array([1, 2, 3]));
+      const store = new EphemeralOutputStore(join(directory, 'outputs'));
+      const output = await store.store(source, 0.01);
+      const path = join(directory, 'outputs', `${output.handle}.mp4`);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await expect(access(path)).rejects.toThrow();
+      await expect(store.resolve(output)).rejects.toThrow(/expired|lost|cleaned/i);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
 });
 
 const ffmpegAvailable = spawnSync('ffmpeg', ['-version'], { windowsHide: true }).status === 0;
@@ -58,15 +72,25 @@ describe.skipIf(!ffmpegAvailable)('V3 FFmpeg pipeline', () => {
         expect(result.status).toBe(0);
       }
       const processor = new FfmpegMediaProcessor();
+      for (const source of sources) {
+        const inputProbe = await processor.probe(source);
+        expect(inputProbe.streams?.some((stream) => stream.codec_type === 'video')).toBe(true);
+      }
       const normalized = [join(directory, 'n1.mp4'), join(directory, 'n2.mp4')];
       await processor.normalize(sources[0]!, normalized[0]!, '720p', 1);
       await processor.normalize(sources[1]!, normalized[1]!, '720p', 1);
       const concat = join(directory, 'concat.mp4');
       await processor.concatenate(normalized, join(directory, 'concat.txt'), concat);
       const final = join(directory, 'final.mp4');
-      await processor.finalize(concat, final, 2);
+      await processor.finalize(concat, final, 1.5);
       const probe = await processor.probe(final);
-      expect(Number(probe.format?.duration)).toBeCloseTo(2, 1);
+      const video = probe.streams?.find((stream) => stream.codec_type === 'video');
+      const audio = probe.streams?.find((stream) => stream.codec_type === 'audio');
+      expect(Number(probe.format?.duration)).toBeCloseTo(1.5, 1);
+      expect(video).toMatchObject({ codec_name: 'h264', width: 1280, height: 720 });
+      expect(audio?.codec_name).toBe('aac');
+      expect((await stat(final)).size).toBeGreaterThan(0);
     } finally { await rm(directory, { recursive: true, force: true }); }
+    await expect(access(directory)).rejects.toThrow();
   }, 120_000);
 });

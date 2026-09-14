@@ -4,6 +4,13 @@ import { createApp } from '../src/app.js';
 import type { AppEnv } from '../src/config/env.js';
 import type { VideoProvider } from '../src/providers/video.provider.js';
 import { projectInput, tokenSecret } from './v3.helpers.js';
+import { loadEnv } from '../src/config/env.js';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { EphemeralOutputStore } from '../src/projects/project-output-store.js';
+import { StatelessProjectService } from '../src/projects/project.service.js';
+import { testTokens } from './v3.helpers.js';
 
 const env: AppEnv = {
   NODE_ENV: 'test', PORT: 3000, SNAPGEN_API_KEY: 'snapgen-secret', MIDDLEWARE_API_KEY: 'middleware-secret',
@@ -29,7 +36,18 @@ describe('V3 stateless project API', () => {
     expect(result.body).toMatchObject({ status: 'planning', progress: 0, model: 'veo-3.1-fast', targetDuration: 70 });
     expect(result.body.downloadUrl).toBeNull();
     expect(result.body.projectState).toMatch(/^pst1\./);
+    expect(JSON.stringify(result.body)).not.toContain(tokenSecret);
     expect(provider.generateVideo).not.toHaveBeenCalled();
+  });
+
+  it('requires an independent, sufficiently strong project state secret', () => {
+    const base = {
+      SNAPGEN_API_KEY: 'snapgen-secret',
+      MIDDLEWARE_API_KEY: 'shared-secret-that-is-at-least-32-characters',
+    };
+    expect(() => loadEnv({ ...base, PROJECT_STATE_SECRET: 'short' })).toThrow('PROJECT_STATE_SECRET');
+    expect(() => loadEnv({ ...base, PROJECT_STATE_SECRET: base.MIDDLEWARE_API_KEY })).toThrow('must not reuse');
+    expect(loadEnv({ ...base, PROJECT_STATE_SECRET: tokenSecret }).PROJECT_STATE_SECRET).toBe(tokenSecret);
   });
 
   it('rejects invalid model and invalid scene count', async () => {
@@ -60,5 +78,37 @@ describe('V3 stateless project API', () => {
     const v3 = await request(app).post('/video/projects/start').set('x-api-key', env.MIDDLEWARE_API_KEY).send(projectInput());
     expect(v3.status).toBe(503);
     expect(v3.body.error).toBe('V3_NOT_CONFIGURED');
+  });
+
+  it('serves only authorized middleware output with safe MP4 headers and clear missing-file errors', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'v3-output-api-test-'));
+    try {
+      const source = join(directory, 'source.mp4');
+      await writeFile(source, new Uint8Array([0, 1, 2, 3]));
+      const now = new Date('2026-09-14T12:00:00.000Z');
+      const tokens = testTokens(now);
+      const outputs = new EphemeralOutputStore(join(directory, 'outputs'), () => now);
+      const service = new StatelessProjectService(tokens, provider, undefined, 86_400, () => now);
+      const state = service.verify(service.start(projectInput()).projectState);
+      state.status = 'completed';
+      state.progress = 100;
+      state.scenes.forEach((scene) => { scene.status = 'completed'; scene.attemptNumber = 1; scene.snapgenUuid = uuid; });
+      state.output = await outputs.store(source, 60);
+      const accessToken = tokens.signOutputAccess(state.projectId, state.output);
+      const app = createApp(env, provider, service, outputs);
+      const response = await request(app).get(`/video/projects/output/${state.projectId}`).query({ access: accessToken }).set('x-api-key', env.MIDDLEWARE_API_KEY);
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('video/mp4');
+      expect(response.headers['content-disposition']).toContain(`filename="${state.projectId}.mp4"`);
+      expect(response.body).toHaveLength(4);
+
+      const invalidProject = await request(app).get('/video/projects/output/not-a-uuid').query({ access: accessToken }).set('x-api-key', env.MIDDLEWARE_API_KEY);
+      expect(invalidProject.status).toBe(400);
+      const missing = { handle: '60c8481d-3089-402c-b948-3ca7c9843891', expiresAt: '2026-09-14T12:01:00.000Z' };
+      const missingAccess = tokens.signOutputAccess(state.projectId, missing);
+      const missingResponse = await request(app).get(`/video/projects/output/${state.projectId}`).query({ access: missingAccess }).set('x-api-key', env.MIDDLEWARE_API_KEY);
+      expect(missingResponse.status).toBe(410);
+      expect(missingResponse.body.error).toBe('PROJECT_OUTPUT_UNAVAILABLE');
+    } finally { await rm(directory, { recursive: true, force: true }); }
   });
 });

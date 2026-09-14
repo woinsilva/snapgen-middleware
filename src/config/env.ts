@@ -20,6 +20,14 @@ const envSchema = z.object({
   PROJECT_MEDIA_MAX_BYTES: z.coerce.number().int().min(1_000_000).max(2_000_000_000).optional(),
   PROJECT_MEDIA_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).optional(),
   SNAPGEN_MEDIA_ALLOWED_HOSTS: z.string().optional(),
+}).superRefine((value, context) => {
+  if (value.PROJECT_STATE_SECRET && value.PROJECT_STATE_SECRET === value.MIDDLEWARE_API_KEY) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['PROJECT_STATE_SECRET'],
+      message: 'PROJECT_STATE_SECRET must not reuse MIDDLEWARE_API_KEY',
+    });
+  }
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
