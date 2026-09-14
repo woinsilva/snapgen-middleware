@@ -1,0 +1,25 @@
+CHECKLIST — ATUALIZAÇÃO DO GPT BUILDER
+
+[ ] 1. Abrir o GPT existente: SnapGen AI Video Studio.
+[ ] 2. NÃO criar outro GPT.
+[ ] 3. Manter o nome: SnapGen AI Video Studio.
+[ ] 4. Manter a descrição atual, salvo se houver motivo real para ajustar.
+[ ] 5. Knowledge: deixar como está.
+[ ] 6. Capabilities: manter a configuração atual.
+[ ] 7. Instructions: substituir pelo conteúdo integral de INSTRUCTIONS-FINAL.txt.
+[ ] 8. Actions: abrir a Action existente.
+[ ] 9. Authentication: selecionar API Key.
+[ ] 10. Authentication Type: selecionar Custom.
+[ ] 11. Header: configurar x-api-key.
+[ ] 12. Manter o secret existente da MIDDLEWARE_API_KEY. Nunca mostrar ou copiar seu valor para o schema, Instructions ou checklist.
+[ ] 13. Schema: substituir integralmente pelo conteúdo de OPENAPI-FINAL.yaml.
+[ ] 14. Privacy Policy: https://snapgen-middleware.onrender.com/privacy
+[ ] 15. Confirmar que o Builder reconhece estas Actions:
+    [ ] getVideoModels
+    [ ] generateVideo
+    [ ] getVideoGenerationStatus
+    [ ] extendVideo
+    [ ] generateStoryboard
+    [ ] healthCheck
+[ ] 16. Salvar sem publicar ainda.
+[ ] 17. Testar em Preview seguindo GPT-PREVIEW-TESTS.txt.

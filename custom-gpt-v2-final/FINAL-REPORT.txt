@@ -1,0 +1,66 @@
+PACOTE FINAL — SNAPGEN AI VIDEO STUDIO V2
+
+ARQUIVOS FINAIS CRIADOS
+
+- openapi-gpt.yaml
+- GPT-INSTRUCTIONS-V2.md
+- CUSTOM-GPT-V2-SETUP.md
+- OPENAPI-FINAL.yaml
+- INSTRUCTIONS-FINAL.txt
+- GPT-BUILDER-CHECKLIST.txt
+- GPT-PREVIEW-TESTS.txt
+- FINAL-REPORT.txt
+
+TAMANHOS
+
+- OPENAPI-FINAL.yaml: 404 linhas
+- INSTRUCTIONS-FINAL.txt: 101 linhas
+
+OPERATION IDS
+
+- getVideoModels
+- generateVideo
+- getVideoGenerationStatus
+- extendVideo
+- generateStoryboard
+- healthCheck
+
+VALIDAÇÃO
+
+- OpenAPI 3.1 válido.
+- Redocly aprovado, com apenas dois avisos editoriais não bloqueantes: licença não declarada e ausência de resposta 4xx em /health.
+- OperationIds únicos.
+- Server de produção correto.
+- /privacy ausente das Actions e configurado separadamente como Privacy Policy.
+- Autenticação x-api-key declarada sem valor de secret.
+- 21 modelos de geração no schema.
+- Storyboard aceita grok-video e grok-3, com default grok-video.
+- grok-lower não é permitido no enum de storyboard.
+- Descriptions com no máximo 139 caracteres.
+- Nenhuma referência quebrada.
+- Nenhum valor real de API key ou token encontrado.
+- Fluxo V1 preservado.
+
+CONTROLES DE ALTERAÇÃO
+
+- Nenhum arquivo de código runtime foi alterado.
+- As alterações de fechamento ficaram restritas aos artefatos documentais do Custom GPT.
+- OPENAPI-FINAL.yaml e openapi-gpt.yaml permaneceram sem mudanças de comportamento.
+- Nenhum deploy manual foi realizado.
+- Render, middleware e secrets não foram alterados.
+- Nenhuma chamada paga foi realizada durante o fechamento documental.
+
+FECHAMENTO DA VALIDAÇÃO EM PRODUÇÃO E NO GPT BUILDER
+
+- Custom GPT V2 publicado.
+- Preview validado com as seis Actions reconhecidas.
+- Uma única geração real com veo-3.1-fast foi concluída com sucesso.
+- O status foi acompanhado reutilizando o mesmo UUID, sem POST pago duplicado.
+- Capabilities de models, extend, storyboard e image-to-video foram validadas sem operações pagas adicionais.
+- grok-video e grok-3 foram confirmados para storyboard; grok-lower foi corretamente rejeitado.
+- O problema de apresentação que informava uma contagem incorreta de modelos foi resolvido exclusivamente nas Instructions.
+- O middleware e o endpoint /video/models não foram alterados.
+
+STATUS FINAL
+
+V2 publicada, validada e pronta para fechamento formal

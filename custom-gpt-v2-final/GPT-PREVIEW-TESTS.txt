@@ -1,0 +1,90 @@
+PLANO DE TESTES NO PREVIEW
+
+Execute na ordem abaixo. Somente o Teste 3 inicia uma operação paga. Não execute operações pagas adicionais.
+
+TESTE 1 — MODELS, GRATUITO
+
+Prompt:
+"Quais modelos de vídeo você tem disponíveis e quais suportam image-to-video?"
+
+Esperado:
+- chamar getVideoModels;
+- responder com base na API;
+- não gerar vídeo.
+
+TESTE 2 — VALIDAÇÃO DE MODELO, GRATUITO
+
+Prompt:
+"Quero gerar um vídeo em grok-lower usando storyboard."
+
+Esperado:
+- não executar geração paga;
+- informar que grok-lower não é suportado para storyboard;
+- indicar grok-video ou grok-3.
+
+TESTE 3 — GERAÇÃO V1 REAL
+
+Prompt:
+"Gere um vídeo com veo-3.1-fast de um carro esportivo vermelho dirigindo por uma estrada costeira ao pôr do sol. A câmera acompanha o carro lateralmente com movimento suave e cinematográfico. 8 segundos, 720p, 16:9."
+
+Esperado:
+- executar exatamente um POST generateVideo;
+- salvar o UUID retornado;
+- informar status processing;
+- não repetir o POST em caso de demora, timeout ou resposta ambígua.
+
+TESTE 4 — STATUS
+
+Prompt:
+"Verifique novamente o status do vídeo que você acabou de gerar."
+
+Esperado:
+- reutilizar o mesmo UUID;
+- chamar apenas getVideoGenerationStatus;
+- não gerar outro vídeo.
+
+Se continuar processing, repita este teste manualmente mais tarde. Quando completed, deve retornar o videoUrl real.
+
+TESTE 5 — EXTEND SEM EXECUTAR
+
+Prompt:
+"Quais modelos disponíveis suportam estender um vídeo já criado?"
+
+Esperado:
+- chamar getVideoModels;
+- listar modelos com supportsExtend=true;
+- não executar chamada paga.
+
+TESTE 6 — STORYBOARD SEM EXECUTAR
+
+Prompt:
+"Quais modelos posso usar para storyboard?"
+
+Esperado:
+- responder grok-video e grok-3;
+- informar que grok-lower não é válido;
+- não gerar vídeo.
+
+TESTE 7 — IMAGE-TO-VIDEO SEM EXECUTAR
+
+Prompt:
+"Se eu te mandar imagens de referência, quais modelos você pode usar para image-to-video?"
+
+Esperado:
+- consultar capabilities com getVideoModels;
+- não inventar modelos;
+- explicar que as referências precisam ser URLs HTTP(S);
+- não gerar vídeo.
+
+NÃO EXECUTAR NESTA VALIDAÇÃO INICIAL
+
+- extend real;
+- storyboard real;
+- image-to-video real;
+- Kling real;
+- Seedance real;
+- Grok real;
+- Flux real;
+- MiniMax real.
+
+Uma única geração Veo é suficiente para validar a regressão V1 e as Actions.

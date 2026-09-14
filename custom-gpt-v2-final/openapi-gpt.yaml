@@ -1,0 +1,404 @@
+openapi: 3.1.0
+info:
+  title: SnapGen AI Video Studio
+  version: 2.0.1
+  description: Generate, extend, and track SnapGen videos through a protected middleware.
+servers:
+  - url: https://snapgen-middleware.onrender.com
+    description: Production
+paths:
+  /video/models:
+    get:
+      operationId: getVideoModels
+      summary: List video models and capabilities
+      description: Returns the generation registry and extend capabilities. Storyboard-specific model IDs are defined by StoryboardRequest.
+      security:
+        - MiddlewareApiKey: []
+      responses:
+        '200':
+          description: Supported models and their safe capabilities
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [models]
+                properties:
+                  models:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VideoModel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /video/generate:
+    post:
+      operationId: generateVideo
+      summary: Start one video generation
+      description: Starts one paid text-to-video or image-to-video operation. Never retry this POST automatically.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateVideoRequest'
+            example:
+              prompt: A cinematic red sports car driving along a coastal road at sunset
+              model: veo-3.1-fast
+              duration: 8
+              resolution: "720p"
+              aspect_ratio: "16:9"
+      responses:
+        '200':
+          description: Generation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoGeneration'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/ProviderError'
+  /video/{uuid}:
+    get:
+      operationId: getVideoGenerationStatus
+      summary: Check one video generation
+      description: Checks the saved UUID. Reuse the same UUID while processing and never invent a video URL.
+      security:
+        - MiddlewareApiKey: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: UUID returned by a generation, extension, or storyboard operation.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current normalized generation status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoGenerationStatus'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/ProviderError'
+  /video/extend:
+    post:
+      operationId: extendVideo
+      summary: Extend an existing video
+      description: Starts one paid extension for a model whose registry entry has supportsExtend=true. Never retry automatically.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtendVideoRequest'
+      responses:
+        '200':
+          description: Extension accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoOperation'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/ProviderError'
+  /video/storyboard:
+    post:
+      operationId: generateStoryboard
+      summary: Generate one Grok storyboard
+      description: Starts one paid multi-scene storyboard. Use 2-10 scenes, 6 or 10 seconds each, totaling no more than 45 seconds. Never retry automatically.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoryboardRequest'
+      responses:
+        '200':
+          description: Storyboard accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoOperation'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/ProviderError'
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Check middleware health
+      description: Use only for troubleshooting, not before every generation.
+      security: []
+      responses:
+        '200':
+          description: Middleware is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+components:
+  securitySchemes:
+    MiddlewareApiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+  schemas:
+    GenerateVideoRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt, model]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          description: Video prompt preserving the user's intent.
+        model:
+          type: string
+          description: Select a compatible model, using getVideoModels when capabilities are uncertain.
+          enum: [veo-3.1, veo-3.1-fast, veo-3.1-lite, veo-2, omni-flash, grok-3, grok-lower, seedance-2, seedance-2-omni, seedance-2-mini, seedance-2-5-omni, flux-3, minimax-h3, kling-video-3-0, kling-video-2-6, kling-video-o1, kling-video-2-5, kling-video-2-1-10s, kling-video-2-1-5s, kling-video-1-6-10s, kling-video-1-6-5s]
+        duration:
+          type: integer
+          minimum: 3
+          maximum: 30
+          description: Model-specific duration. Omit to use the selected model default.
+        resolution:
+          type: string
+          enum: ["480p", "720p", "1080p"]
+          description: Model-specific resolution. Some models derive it from mode or reject this field.
+        aspect_ratio:
+          type: string
+          description: Model-specific aspect ratio. Confirm accepted values with getVideoModels.
+        mode_image:
+          type: string
+          enum: [frame, ingredient]
+          description: Veo reference-image mode.
+        ref_images:
+          type: array
+          maxItems: 14
+          description: Public HTTP or HTTPS image URLs. Respect the selected model's limit and ordering rules.
+          items:
+            type: string
+            format: uri
+            pattern: '^https?://'
+        mode:
+          type: string
+          description: Optional model-specific generation or quality mode.
+        skip_audio:
+          type: boolean
+          description: Grok-only option. True requests a silent video.
+    ExtendVideoRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt, model, source_uuid]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          description: Instructions for continuing the existing video.
+        model:
+          type: string
+          description: Original compatible model with supportsExtend=true in getVideoModels.
+        source_uuid:
+          type: string
+          format: uuid
+          description: UUID of the existing SnapGen generation to extend.
+    StoryboardRequest:
+      type: object
+      additionalProperties: false
+      required: [scenes]
+      properties:
+        model:
+          type: string
+          enum: [grok-video, grok-3]
+          default: grok-video
+          description: Storyboard-specific ID. grok-video is canonical and grok-3 is its documented alias. grok-lower is not supported.
+        scenes:
+          type: array
+          minItems: 2
+          maxItems: 10
+          description: Ordered scenes. Combined duration must not exceed 45 seconds.
+          items:
+            type: object
+            additionalProperties: false
+            required: [prompt, duration]
+            properties:
+              prompt:
+                type: string
+                minLength: 1
+                maxLength: 10000
+              duration:
+                type: integer
+                enum: [6, 10]
+        aspect_ratio:
+          type: string
+          enum: [landscape, portrait, square]
+          default: landscape
+        resolution:
+          type: string
+          enum: ["480p", "720p"]
+          default: "480p"
+    VideoGeneration:
+      type: object
+      additionalProperties: false
+      required: [uuid, status, provider, model]
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [processing]
+        provider:
+          type: string
+          enum: [snapgen]
+        model:
+          type: string
+    VideoGenerationStatus:
+      type: object
+      additionalProperties: false
+      required: [uuid, status, progress, videoUrl, provider]
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [processing, completed, failed]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        videoUrl:
+          anyOf:
+            - type: string
+              format: uri
+            - type: "null"
+        provider:
+          type: string
+          enum: [snapgen]
+        error:
+          type: string
+    VideoOperation:
+      type: object
+      additionalProperties: false
+      required: [uuid, status, provider, operation, model]
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [processing]
+        provider:
+          type: string
+          enum: [snapgen]
+        operation:
+          type: string
+          enum: [extend, storyboard]
+        model:
+          type: string
+    VideoModel:
+      type: object
+      additionalProperties: false
+      required: [id, family, supportsTextToVideo, supportsImageToVideo, supportsExtend, resolutions, aspectRatios, durations, modes, maxReferenceImages]
+      properties:
+        id:
+          type: string
+        family:
+          type: string
+          enum: [veo, grok, seedance, flux, minimax, kling]
+        supportsTextToVideo:
+          type: boolean
+        supportsImageToVideo:
+          type: boolean
+        supportsExtend:
+          type: boolean
+        resolutions:
+          type: array
+          items:
+            type: string
+        aspectRatios:
+          type: array
+          items:
+            type: string
+        durations:
+          description: Either fixed allowed durations or an inclusive minimum and maximum range.
+          anyOf:
+            - type: array
+              items:
+                type: integer
+            - $ref: '#/components/schemas/DurationRange'
+        modes:
+          type: array
+          items:
+            type: string
+        maxReferenceImages:
+          type: integer
+          minimum: 0
+    DurationRange:
+      type: object
+      additionalProperties: false
+      required: [min, max]
+      properties:
+        min:
+          type: integer
+        max:
+          type: integer
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+        status:
+          type: integer
+  responses:
+    Unauthorized:
+      description: Missing or invalid middleware API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Invalid request or unsupported model capability
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ProviderError:
+      description: Error returned while calling the video provider
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
