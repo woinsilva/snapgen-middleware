@@ -161,6 +161,10 @@ Para imagens de referência, cada URL HTTP(S) é enviada como um campo multipart
 
 O arquivo `openapi.yaml` descreve o middleware, não a API do SnapGen. O GPT envia somente `application/json`.
 
+Privacy Policy pública para configuração da Custom GPT Action:
+
+https://snapgen-middleware.onrender.com/privacy
+
 No GPT Builder:
 
 1. Importe `openapi.yaml`.

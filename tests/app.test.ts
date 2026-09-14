@@ -29,6 +29,15 @@ describe('middleware API', () => {
     expect(response.body).toEqual({ status: 'ok' });
   });
 
+  it('serves the public privacy policy as HTML without authentication', async () => {
+    const response = await request(createApp(env)).get('/privacy');
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toContain('text/html');
+    expect(response.text).toContain('Privacy Policy');
+    expect(response.text).toContain('SnapGen Video Middleware');
+    expect(response.text).toContain('wssitconsultoria@gmail.com');
+  });
+
   it('uses a supplied request ID in the response and SnapGen call', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
       expect((init?.headers as Record<string, string>)['x-request-id']).toBe('trace-from-gpt');

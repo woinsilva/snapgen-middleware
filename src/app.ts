@@ -8,6 +8,7 @@ import { createErrorHandler, notFoundHandler } from './middleware/error.middlewa
 import { createRequestLogger } from './middleware/logging.middleware.js';
 import { requestIdMiddleware } from './middleware/request-id.middleware.js';
 import { healthRouter } from './routes/health.routes.js';
+import { privacyRouter } from './routes/privacy.routes.js';
 import { createVideoRouter } from './routes/video.routes.js';
 import { SnapGenService } from './services/snapgen.service.js';
 import type { VideoProvider } from './providers/video.provider.js';
@@ -40,6 +41,7 @@ export function createApp(env: AppEnv, service?: VideoProvider): Express {
   }));
   app.use(express.json({ limit: '1mb' }));
   app.use('/health', healthRouter);
+  app.use('/privacy', privacyRouter);
   app.use('/video', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), createVideoRouter(provider));
   app.use(notFoundHandler);
   app.use(createErrorHandler(env));
