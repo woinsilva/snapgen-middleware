@@ -166,9 +166,16 @@ RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX=30
 NODE_ENV=development
 LOG_LEVEL=info
+PROJECT_STATE_SECRET=
 ```
 
 O `.env` real é ignorado pelo Git e pelo contexto Docker. Nunca configure `SNAPGEN_API_KEY` no GPT.
+
+`PROJECT_STATE_SECRET` habilita as rotas stateless da V3 e deve ser um secret independente com pelo menos 32 caracteres. Sem ele, V1/V2 continuam funcionando e a V3 retorna `503 V3_NOT_CONFIGURED`.
+
+## Projetos de vídeo stateless (V3)
+
+A V3 adiciona `/video/projects/start`, `/video/projects/continue`, `/video/projects/render` e uma rota temporária de download. Ela usa um Project State Token assinado em vez de banco ou worker. O cliente deve preservar somente o token mais recente. Consulte [docs/stateless-v3.md](docs/stateless-v3.md) para fluxo, risco de replay, budget guard, segurança de mídia e limites da entrega efêmera.
 
 ## Render
 

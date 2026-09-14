@@ -18,4 +18,14 @@ describe('OpenAPI contract', () => {
           content:
             text/html:`);
   });
+
+  it('documents internal stateless V3 endpoints without changing the published Custom GPT artifact', async () => {
+    const document = await readFile(new URL('../openapi.yaml', import.meta.url), 'utf8');
+    const published = await readFile(new URL('../custom-gpt-v2-final/OPENAPI-FINAL.yaml', import.meta.url), 'utf8');
+    expect(document).toContain('/video/projects/start:');
+    expect(document).toContain('/video/projects/continue:');
+    expect(document).toContain('/video/projects/render:');
+    expect(document).toContain('/video/projects/output/{projectId}:');
+    expect(published).not.toContain('/video/projects/start:');
+  });
 });

@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: SnapGen Video Middleware
-  version: 1.0.0
-  description: JSON API for generating and checking SnapGen videos without exposing the SnapGen credential.
+  version: 3.0.0
+  description: JSON API for direct SnapGen workflows and stateless long-video project orchestration without exposing credentials.
 servers:
   - url: https://snapgen-middleware.onrender.com
     description: Production deployment on Render.
@@ -144,6 +144,132 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         default:
           $ref: '#/components/responses/SnapGenError'
+  /video/projects/start:
+    post:
+      operationId: startVideoProjectV3
+      summary: Validate and start a stateless long-video project
+      description: Creates a signed Project State Token without calling SnapGen. The client must preserve and replace this token after every response.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartProjectRequest'
+            example:
+              concept: Uma aventura infantil na floresta
+              model: veo-3.1-fast
+              duration: 70
+              resolution: 1080p
+              aspect_ratio: '16:9'
+              visualBible:
+                style: 2D animated children's adventure
+                characters:
+                  - id: lia
+                    description: Young explorer with a yellow backpack
+                environment: Warm enchanted forest at golden hour
+                continuityRules:
+                  - Keep Lia, her backpack, lighting, and travel direction consistent
+              scenes:
+                - { sequence: 1, prompt: Lia enters the enchanted forest, continuityInstructions: Preserve Lia and the golden-hour lighting }
+                - { sequence: 2, prompt: Lia follows a glowing trail, continuityInstructions: Continue forward along the same path }
+                - { sequence: 3, prompt: Lia meets a friendly fox, continuityInstructions: Preserve Lia and the established forest }
+                - { sequence: 4, prompt: Lia and the fox cross a stream, continuityInstructions: Keep character designs and direction consistent }
+                - { sequence: 5, prompt: They discover ancient trees, continuityInstructions: Maintain the same lighting and visual style }
+                - { sequence: 6, prompt: Fireflies guide them uphill, continuityInstructions: Continue the established journey }
+                - { sequence: 7, prompt: They reach a hidden clearing, continuityInstructions: Preserve characters and environment palette }
+                - { sequence: 8, prompt: Lia finds a glowing seed, continuityInstructions: Maintain props and camera direction }
+                - { sequence: 9, prompt: Lia plants the seed as the forest shines, continuityInstructions: Conclude with the established characters and style }
+      responses:
+        '202':
+          description: Stateless project initialized; no paid generation has started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Project State Token would exceed the configured limit
+  /video/projects/continue:
+    post:
+      operationId: continueVideoProjectV3
+      summary: Advance a stateless long-video project by one safe step
+      description: Verifies the token and performs at most one paid SnapGen POST or one status GET. Never retries a paid POST.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectStateRequest'
+      responses:
+        '200':
+          description: Updated signed project state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /video/projects/render:
+    post:
+      operationId: renderVideoProjectV3
+      summary: Assemble completed project scenes into a temporary MP4
+      description: Refreshes completed media URLs by UUID, downloads them securely, normalizes and concatenates with FFmpeg, and stores the result only on ephemeral local storage.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectStateRequest'
+      responses:
+        '200':
+          description: Render completed with a temporary download URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Project is not ready or source media is unavailable
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /video/projects/output/{projectId}:
+    get:
+      operationId: downloadVideoProjectOutputV3
+      summary: Download an ephemeral rendered MP4
+      description: The access token is short-lived. The file can disappear after expiry, cleanup, restart, or deploy because no persistent storage is used.
+      security:
+        - MiddlewareApiKey: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: access
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: MP4 video stream
+          content:
+            video/mp4:
+              schema: { type: string, format: binary }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '410':
+          description: Ephemeral output expired or was lost
   /video/{uuid}:
     get:
       operationId: getVideoGenerationStatus
@@ -178,6 +304,91 @@ components:
       in: header
       name: x-api-key
   schemas:
+    VisualBible:
+      type: object
+      additionalProperties: false
+      required: [style, characters, environment, continuityRules]
+      properties:
+        style: { type: string, minLength: 1, maxLength: 2000 }
+        characters:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, description]
+            properties:
+              id: { type: string, pattern: '^[A-Za-z0-9_-]+$' }
+              description: { type: string, minLength: 1, maxLength: 2000 }
+        environment: { type: string, minLength: 1, maxLength: 3000 }
+        continuityRules:
+          type: array
+          maxItems: 50
+          items: { type: string, minLength: 1, maxLength: 1000 }
+    ProjectSceneInput:
+      type: object
+      additionalProperties: false
+      required: [sequence, prompt]
+      properties:
+        sequence: { type: integer, minimum: 1 }
+        prompt: { type: string, minLength: 1, maxLength: 4000 }
+        continuityInstructions: { type: string, minLength: 1, maxLength: 1500 }
+    StartProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [concept, model, duration, resolution, aspect_ratio, visualBible, scenes]
+      properties:
+        concept: { type: string, minLength: 1, maxLength: 4000 }
+        model: { type: string, enum: [veo-3.1-fast] }
+        duration: { type: integer, minimum: 60, maximum: 180 }
+        resolution: { type: string, enum: [720p, 1080p] }
+        aspect_ratio: { type: string, enum: ['16:9'] }
+        visualBible: { $ref: '#/components/schemas/VisualBible' }
+        scenes:
+          type: array
+          minItems: 8
+          maxItems: 23
+          description: Must contain exactly ceil(duration / 8) scenes, sequentially numbered from 1.
+          items: { $ref: '#/components/schemas/ProjectSceneInput' }
+    ProjectStateRequest:
+      type: object
+      additionalProperties: false
+      required: [projectState]
+      properties:
+        projectState:
+          type: string
+          description: Latest middleware-signed Project State Token. Never reuse an older token after receiving a replacement.
+    ProjectResponse:
+      type: object
+      required: [projectId, status, progress, model, targetDuration, scenes, projectState, downloadUrl, outputExpiresAt, error]
+      properties:
+        projectId: { type: string, format: uuid }
+        status: { type: string, enum: [planning, generating, assembling, completed, failed] }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        model: { type: string, const: veo-3.1-fast }
+        targetDuration: { type: integer }
+        scenes:
+          type: object
+          required: [total, completed, processing, pending]
+          properties:
+            total: { type: integer }
+            completed: { type: integer }
+            processing: { type: integer }
+            pending: { type: integer }
+        projectState: { type: string }
+        downloadUrl:
+          anyOf: [{ type: string }, { type: 'null' }]
+        outputExpiresAt:
+          anyOf: [{ type: string, format: date-time }, { type: 'null' }]
+        error:
+          anyOf:
+            - type: object
+              required: [code, message, retryable]
+              properties:
+                code: { type: string }
+                message: { type: string }
+                retryable: { type: boolean, const: false }
+            - type: 'null'
     GenerateVideoRequest:
       type: object
       additionalProperties: false

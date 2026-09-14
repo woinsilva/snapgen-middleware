@@ -14,6 +14,9 @@ export function createRequestLogger(logger: Logger): RequestHandler {
         durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
       };
       if (response.locals.requestUuid) record.generationUuid = response.locals.requestUuid;
+      for (const field of ['projectId', 'sceneId', 'attemptId', 'snapgenUuid'] as const) {
+        if (response.locals[field]) record[field] = response.locals[field];
+      }
       logger.info(record);
     });
     next();

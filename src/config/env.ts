@@ -12,6 +12,14 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
+  PROJECT_STATE_SECRET: z.preprocess((value) => value === '' ? undefined : value, z.string().min(32).optional()),
+  PROJECT_STATE_SECRET_PREVIOUS: z.preprocess((value) => value === '' ? undefined : value, z.string().min(32).optional()),
+  PROJECT_STATE_TOKEN_TTL_SECONDS: z.coerce.number().int().min(3600).max(31_536_000).optional(),
+  PROJECT_STATE_TOKEN_MAX_BYTES: z.coerce.number().int().min(16_384).max(262_144).optional(),
+  PROJECT_OUTPUT_TTL_SECONDS: z.coerce.number().int().min(60).max(86_400).optional(),
+  PROJECT_MEDIA_MAX_BYTES: z.coerce.number().int().min(1_000_000).max(2_000_000_000).optional(),
+  PROJECT_MEDIA_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).optional(),
+  SNAPGEN_MEDIA_ALLOWED_HOSTS: z.string().optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
