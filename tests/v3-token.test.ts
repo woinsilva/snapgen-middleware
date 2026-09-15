@@ -3,16 +3,42 @@ import { projectInput, serviceWith, testTokens, tokenSecret } from './v3.helpers
 import type { VideoProvider } from '../src/providers/video.provider.js';
 import { ProjectStateTokenService } from '../src/projects/project-state-token.js';
 import { createHmac, randomBytes } from 'node:crypto';
-import { deflateRawSync } from 'node:zlib';
+import { deflateRawSync, inflateRawSync } from 'node:zlib';
 
 const unusedProvider = {} as VideoProvider;
+
+function signRawState(state: Record<string, unknown>): string {
+  const payload = deflateRawSync(Buffer.from(JSON.stringify(state))).toString('base64url');
+  const signature = createHmac('sha256', tokenSecret).update(`pst1.${payload}`).digest('base64url');
+  return `pst1.${payload}.${signature}`;
+}
 
 describe('V3 Project State Token', () => {
   it('round-trips a signed and compressed state', () => {
     const { service } = serviceWith(unusedProvider);
     const started = service.start(projectInput());
-    expect(service.verify(started.projectState).projectId).toBe(started.projectId);
+    const state = service.verify(started.projectState);
+    expect(state.projectId).toBe(started.projectId);
+    expect(state).toMatchObject({ schemaVersion: 2, generationStrategy: 'independent' });
     expect(started.projectState.startsWith('pst1.')).toBe(true);
+  });
+
+  it('rejects correctly signed states with a missing or unsupported generation strategy', () => {
+    const { service } = serviceWith(unusedProvider);
+    const state = service.verify(service.start(projectInput()).projectState) as unknown as Record<string, unknown>;
+    const missing = { ...state };
+    delete missing.generationStrategy;
+    expect(() => testTokens().verify(signRawState(missing))).toThrow('invalid or has been modified');
+    expect(() => testTokens().verify(signRawState({ ...state, generationStrategy: 'extend' }))).toThrow('invalid or has been modified');
+  });
+
+  it('detects generation strategy tampering through the HMAC signature', () => {
+    const { service } = serviceWith(unusedProvider);
+    const token = service.start(projectInput()).projectState;
+    const parts = token.split('.');
+    const state = JSON.parse(inflateRawSync(Buffer.from(parts[1]!, 'base64url')).toString('utf8')) as Record<string, unknown>;
+    const tamperedPayload = deflateRawSync(Buffer.from(JSON.stringify({ ...state, generationStrategy: 'extend' }))).toString('base64url');
+    expect(() => service.verify(`${parts[0]}.${tamperedPayload}.${parts[2]}`)).toThrow('invalid or has been modified');
   });
 
   it('rejects payload modification and a wrong secret', () => {
@@ -51,17 +77,15 @@ describe('V3 Project State Token', () => {
   it('rejects a correctly signed payload with an unsupported schema version', () => {
     const { service } = serviceWith(unusedProvider);
     const state = service.verify(service.start(projectInput()).projectState) as unknown as Record<string, unknown>;
-    state.schemaVersion = 2;
-    const payload = deflateRawSync(Buffer.from(JSON.stringify(state))).toString('base64url');
-    const signature = createHmac('sha256', tokenSecret).update(`pst1.${payload}`).digest('base64url');
-    expect(() => testTokens().verify(`pst1.${payload}.${signature}`)).toThrow('invalid or has been modified');
+    state.schemaVersion = 3;
+    expect(() => testTokens().verify(signRawState(state))).toThrow('invalid or has been modified');
   });
 
-  it.each([70, 180])('keeps a realistic %is project below the 64 KiB limit', (duration) => {
+  it.each([[70, 9], [180, 23]])('keeps a realistic %is project with %i scenes below the 64 KiB limit', (duration, scenes) => {
     const { service } = serviceWith(unusedProvider);
     const token = service.start(projectInput(duration)).projectState;
     expect(Buffer.byteLength(token)).toBeLessThan(65_536);
-    expect(service.verify(token).scenes).toHaveLength(Math.ceil(duration / 8));
+    expect(service.verify(token).scenes).toHaveLength(scenes);
   });
 
   it('rejects a token that exceeds its configured size limit', () => {

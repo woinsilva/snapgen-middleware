@@ -4,6 +4,9 @@ export type VideoProjectStatus = typeof projectStatuses[number];
 export const sceneStatuses = ['pending', 'submitting', 'processing', 'completed', 'failed', 'ambiguous'] as const;
 export type VideoProjectSceneStatus = typeof sceneStatuses[number];
 
+export const projectGenerationStrategies = ['independent'] as const;
+export type ProjectGenerationStrategy = typeof projectGenerationStrategies[number];
+
 export interface VisualBibleCharacter { id: string; description: string }
 export interface VisualBible {
   style: string;
@@ -18,7 +21,7 @@ export interface ProjectModelProfile {
   supportsLongProject: boolean;
   supportsExtend: boolean;
   extendChainValidated: boolean;
-  generationStrategy: 'independent' | 'extend';
+  generationStrategy: ProjectGenerationStrategy;
   allowedResolutions: readonly string[];
   allowedAspectRatios: readonly string[];
 }
@@ -32,10 +35,11 @@ export interface ProjectStateScene extends ProjectSceneInput {
 }
 export interface ProjectOutputState { handle: string; expiresAt: string }
 export interface ProjectState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   projectId: string;
   tokenVersion: number;
   model: string;
+  generationStrategy: ProjectGenerationStrategy;
   targetDuration: number;
   segmentDuration: number;
   plannedSegmentCount: number;

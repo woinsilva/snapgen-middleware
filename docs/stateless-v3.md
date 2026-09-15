@@ -20,7 +20,9 @@ The format is:
 pst1.<base64url(deflateRaw(JSON))>.<base64url(HMAC-SHA256)>
 ```
 
-The signature covers the prefix and compressed payload and is compared in constant time. The payload contains project parameters, the visual bible, scenes, UUIDs, states, budget counters, timestamps, schema version, and monotonic token version. It contains no API keys, provider credentials, or provider media URLs.
+The signature covers the prefix and compressed payload and is compared in constant time. The payload contains project parameters, the selected `generationStrategy`, the visual bible, scenes, UUIDs, states, budget counters, timestamps, schema version, and monotonic token version. It contains no API keys, provider credentials, or provider media URLs. The current state schema requires `generationStrategy: "independent"`; `continue` and `render` reject missing or unsupported strategies when they verify the token.
+
+The state schema version is `2`. It was incremented when `generationStrategy` became a required signed field because this intentionally makes the earlier test-only schema-1 tokens invalid. The `pst1` envelope prefix did not change because compression and HMAC framing remain the same. No paid V3 projects existed when this compatibility break was introduced.
 
 `PROJECT_STATE_SECRET` signs new tokens and must be an independent high-entropy secret of at least 32 characters. `PROJECT_STATE_SECRET_PREVIOUS` is optional and allows one rotation window; new tokens always use the current secret.
 

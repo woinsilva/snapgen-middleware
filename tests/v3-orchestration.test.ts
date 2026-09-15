@@ -32,6 +32,7 @@ describe('V3 stateless continuation', () => {
     const { service } = serviceWith(mock);
     const response = await service.continue(service.start(projectInput()).projectState, 'request-1');
     const state = service.verify(response.projectState);
+    expect(state.generationStrategy).toBe('independent');
     expect(mock.generateVideo).toHaveBeenCalledTimes(1);
     expect(mock.extendVideo).not.toHaveBeenCalled();
     expect(state.scenes[0]).toMatchObject({ status: 'processing', attemptNumber: 1, operation: 'generate', snapgenUuid: uuid });
@@ -130,6 +131,7 @@ describe('V3 stateless continuation', () => {
     expect(renderer.render).not.toHaveBeenCalled();
     response = await service.render(response.projectState, 'render-request');
     expect(response.status).toBe('completed');
+    expect(service.verify(response.projectState).generationStrategy).toBe('independent');
     expect(response.progress).toBe(100);
     expect(response.downloadUrl).toContain('/video/projects/output/');
     expect(renderer.render).toHaveBeenCalledTimes(1);

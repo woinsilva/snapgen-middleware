@@ -4,6 +4,7 @@ import type { VideoProvider } from '../providers/video.provider.js';
 import { assertProjectTransition, assertSceneTransition, calculateProjectBudget, calculateProjectProgress, type ProjectState } from './project.domain.js';
 import { deriveProjectPlan, projectStateSchema, type CreateProjectInput, type ValidatedProjectState } from './project.schemas.js';
 import type { ProjectStateTokenService } from './project-state-token.js';
+import { projectModelProfileRegistry } from './project-model-profile.registry.js';
 
 export interface RenderResult { handle: string; expiresAt: string }
 export interface ProjectRenderer { render(state: ValidatedProjectState, requestId: string): Promise<RenderResult> }
@@ -42,14 +43,16 @@ export class StatelessProjectService {
   ) {}
 
   start(input: CreateProjectInput): ProjectResponse {
+    const profile = projectModelProfileRegistry.get(input.model);
     const plan = deriveProjectPlan(input);
     const budget = calculateProjectBudget(plan.plannedSegmentCount);
     const now = this.now();
     const state = projectStateSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       projectId: randomUUID(),
       tokenVersion: 1,
       model: input.model,
+      generationStrategy: profile.generationStrategy,
       targetDuration: input.duration,
       segmentDuration: plan.segmentDuration,
       plannedSegmentCount: plan.plannedSegmentCount,

@@ -36,6 +36,7 @@ describe('V3 stateless project API', () => {
     expect(result.body).toMatchObject({ status: 'planning', progress: 0, model: 'veo-3.1-fast', targetDuration: 70 });
     expect(result.body.downloadUrl).toBeNull();
     expect(result.body.projectState).toMatch(/^pst1\./);
+    expect(new StatelessProjectService(testTokens(), provider).verify(result.body.projectState).generationStrategy).toBe('independent');
     expect(JSON.stringify(result.body)).not.toContain(tokenSecret);
     expect(provider.generateVideo).not.toHaveBeenCalled();
   });

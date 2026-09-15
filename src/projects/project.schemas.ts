@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { calculateRawDuration, calculateSegmentCount, calculateTrimDuration, projectStatuses, sceneStatuses } from './project.domain.js';
+import { calculateRawDuration, calculateSegmentCount, calculateTrimDuration, projectGenerationStrategies, projectStatuses, sceneStatuses } from './project.domain.js';
 import { projectModelProfileRegistry } from './project-model-profile.registry.js';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -33,7 +33,8 @@ export const projectStateSceneSchema = projectSceneInputSchema.extend({
   if (['processing', 'completed'].includes(scene.status) && !scene.snapgenUuid) context.addIssue({ code: z.ZodIssueCode.custom, path: ['snapgenUuid'], message: `${scene.status} scene requires snapgenUuid` });
 });
 export const projectStateSchema = z.object({
-  schemaVersion: z.literal(1), projectId: z.string().uuid(), tokenVersion: z.number().int().positive(), model: text(100),
+  schemaVersion: z.literal(2), projectId: z.string().uuid(), tokenVersion: z.number().int().positive(), model: text(100),
+  generationStrategy: z.enum(projectGenerationStrategies),
   targetDuration: z.number().int().min(60).max(180), segmentDuration: z.number().int().positive(), plannedSegmentCount: z.number().int().positive().max(30),
   rawDuration: z.number().int().positive(), trimDuration: z.number().int().nonnegative(), resolution: text(20), aspectRatio: text(20), concept: text(4_000),
   visualBible: visualBibleSchema, scenes: z.array(projectStateSceneSchema).min(1).max(30), paidOperations: z.number().int().nonnegative(),
