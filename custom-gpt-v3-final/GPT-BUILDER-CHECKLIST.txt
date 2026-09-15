@@ -3,6 +3,7 @@ CHECKLIST — CUSTOM GPT V3 STATELESS
 [ ] 1. Abrir o GPT existente “SnapGen AI Video Studio”; não criar outro GPT.
 [ ] 2. Não alterar nome, Knowledge ou Capabilities sem motivo independente.
 [ ] 3. Copiar integralmente INSTRUCTIONS-FINAL.txt para Instructions.
+[ ] 3.1 Confirmar que V3 Stateless é o workflow principal para projetos longos; V1/V2 permanece apenas para vídeo curto, status simples, Extend e Storyboard quando explicitamente aplicáveis.
 [ ] 4. Abrir a Action existente e substituir o schema pelo conteúdo integral de OPENAPI-FINAL.yaml.
 [ ] 5. Authentication: API Key.
 [ ] 6. Authentication Type: Custom.
@@ -31,6 +32,7 @@ CHECKLIST — CUSTOM GPT V3 STATELESS
 [ ] 19. Teste crítico na mesma conversa: T1 → T2 → T3 → T4, sempre substituindo o token e nunca reutilizando versões anteriores.
 [ ] 20. Se o GPT perder projectState, confirmar que ele para sem reconstruir token ou iniciar outro projeto.
 [ ] 21. Confirmar que render retorna renderJobId rapidamente e que o GPT consulta status pelos mesmos projectId/renderJobId.
+[ ] 21.1 Confirmar que HTTP 202 e status processing nunca são apresentados como vídeo concluído e que cada nova consulta reutiliza o mesmo renderJobId, sem criar outro job.
 [ ] 22. Confirmar que somente status=completed faz o GPT apresentar downloadUrl como link temporário.
 [ ] 23. Executar teste pago apenas em etapa posterior, com limite de custo explícito e autorização do usuário.
 [ ] 24. Após todos os testes, revisar o diff manual do Builder e só então publicar.

@@ -40,7 +40,7 @@ SEGURANÇA
 ARTEFATOS DO CUSTOM GPT
 
 - OPENAPI-FINAL.yaml: contrato V1/V2/V3 com somente Actions textuais/JSON.
-- INSTRUCTIONS-FINAL.txt: roteamento simple/long, Project State, orçamento, polling, render e output temporário.
+- INSTRUCTIONS-FINAL.txt: workflow V3 Stateless como fluxo principal, compatibilidade V1/V2 secundária, Project State, orçamento, render assíncrono e output temporário.
 - GPT-BUILDER-CHECKLIST.txt: atualização manual e validação no Builder.
 - GPT-PREVIEW-TESTS.txt: testes gratuitos e testes pagos futuros separados.
 - HTTP-FLOW-EXAMPLE.md: fluxo HTTP completo com placeholders seguros.

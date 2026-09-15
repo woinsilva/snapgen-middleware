@@ -43,7 +43,7 @@ Content-Type: application/json
 { "projectState": "<LATEST_PROJECT_STATE>" }
 ```
 
-Cada resposta substitui o token anterior. Repita de forma não paralela até todas as cenas estarem concluídas. Então:
+Cada resposta substitui o token anterior. Repita de forma não paralela até todas as cenas estarem concluídas e o projeto retornar `assembling`, que é o estado real pronto para render. Então:
 
 ```http
 POST /video/projects/render
@@ -53,7 +53,7 @@ Content-Type: application/json
 { "projectState": "<LATEST_PROJECT_STATE>" }
 ```
 
-Resposta imediata:
+Resposta imediata (HTTP 202 significa job aceito, não vídeo concluído):
 
 ```json
 {
@@ -67,14 +67,14 @@ Resposta imediata:
 }
 ```
 
-Polling textual/JSON autenticado:
+Consulta textual/JSON autenticada, reutilizando sempre os mesmos IDs e sem criar outro render job:
 
 ```http
 GET /video/projects/<PROJECT_ID>/render/<RENDER_JOB_ID>
 x-api-key: <configured-in-gpt-builder>
 ```
 
-Quando `completed`, a resposta contém `<LATEST_PROJECT_STATE>` e uma URL absoluta temporária. O GPT substitui o token interno e mostra apenas a URL:
+Se continuar `processing`, o GPT informa isso e aguarda nova interação antes de consultar novamente. Quando `completed`, a resposta contém `<LATEST_PROJECT_STATE>` e uma URL absoluta temporária. O GPT substitui o token interno e mostra apenas a URL:
 
 ```json
 {

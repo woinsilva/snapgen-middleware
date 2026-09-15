@@ -2,13 +2,17 @@ GPT PREVIEW TESTS — V3 STATELESS
 
 FASE A — GRATUITA, EXECUTAR PRIMEIRO
 
-TESTE 1 — CAPABILITIES
-Prompt: “Quais modelos suportam projetos longos e image-to-video?”
-Esperado: consultar getVideoModels quando necessário; apresentar capabilities reais; não informar, calcular ou estimar a quantidade total de modelos; não gerar vídeo.
+TESTE 1 — ROTEAMENTO V3 PRINCIPAL
+Prompt: “Quero criar um vídeo narrativo de 70 segundos, 16:9 e 1080p. Explique como você vai conduzir o projeto, mas não gere ainda.”
+Esperado: escolher o workflow V3 Stateless; planejar exatamente 9 cenas; separar geração das cenas, render assíncrono e download final; não executar Action paga.
+
+TESTE 1A — CAPABILITIES
+Prompt: “Quais modelos suportam image-to-video e Extend?”
+Esperado: consultar getVideoModels quando necessário; apresentar apenas capabilities reais; não informar, calcular ou estimar a quantidade total; não afirmar que todos os modelos listados suportam projeto longo; não gerar vídeo.
 
 TESTE 2 — PLANEJAMENTO SEM ACTION PAGA
 Prompt: “Planeje um vídeo de 70 segundos com veo-3.1-fast sobre uma aventura infantil, 16:9 e 1080p, mas não gere ainda.”
-Esperado: escolher LONG VIDEO PROJECT FLOW; calcular exatamente 9 cenas; preparar concept, visualBible e prompts autocontidos; não chamar continueVideoProject, generateVideo, Extend ou Storyboard.
+Esperado: escolher V3 STATELESS; calcular exatamente 9 cenas; preparar concept, visualBible e prompts autocontidos; não chamar continueVideoProject, generateVideo, extendVideo ou generateStoryboard.
 
 TESTE 3 — START GRATUITO
 Prompt: “Valide e crie somente o estado desse projeto, sem iniciar nenhuma geração paga.”
@@ -18,9 +22,9 @@ TESTE 4 — TOKEN PERDIDO
 Em uma conversa de teste sem projectState disponível, diga: “Continue o projeto anterior.”
 Esperado: parar; informar que o estado necessário não está disponível; não reconstruir token; não criar projeto novo; não chamar Action paga.
 
-TESTE 5 — SIMPLE VIDEO ROUTING SEM EXECUTAR
+TESTE 5 — COMPATIBILIDADE DE VÍDEO CURTO SEM EXECUTAR
 Prompt: “Como você trataria um vídeo único de 8 segundos com veo-3.1-fast? Não gere.”
-Esperado: escolher SIMPLE VIDEO FLOW com generateVideo; não iniciar long project; não executar POST.
+Esperado: usar a compatibilidade secundária generateVideo; não iniciar projeto V3 longo; não executar POST.
 
 TESTE 6 — STORYBOARD E EXTEND
 Prompt: “Quais opções existem para storyboard e para estender vídeo? Não execute nada.”
@@ -30,6 +34,10 @@ TESTE 7 — RENDER JOB SEM ESTADO PRONTO
 Prompt: “Renderize o projeto, mas eu não tenho um projectState com todas as cenas concluídas.”
 Esperado: não inventar token/IDs nem chamar render; explicar que todas as cenas e o estado mais recente são necessários.
 
+TESTE 8 — HTTP 202 E POLLING DE RENDER
+Simule uma resposta 202 de render com status processing e diga: “o vídeo já está pronto?”
+Esperado: responder que o job foi aceito, mas ainda não terminou; preservar projectId/renderJobId; não criar outro render; fazer no máximo uma consulta de status na interação e só apresentar downloadUrl após completed.
+
 FASE B — TESTES PAGOS FUTUROS, NÃO EXECUTAR NESTA ETAPA
 
 1. Autorizar explicitamente um projeto completo e confirmar que o GPT informa o máximo de gerações planejadas antes do primeiro continue.
@@ -38,7 +46,7 @@ FASE B — TESTES PAGOS FUTUROS, NÃO EXECUTAR NESTA ETAPA
 4. Confirmar que timeout/ambiguous interrompe o fluxo sem retry.
 5. Completar todas as cenas dentro de maxPaidOperations.
 6. Iniciar renderVideoProject e confirmar resposta 202 rápida.
-7. Consultar getVideoProjectRenderStatus pelos mesmos IDs até completed, sem polling agressivo.
+7. Consultar getVideoProjectRenderStatus pelos mesmos IDs, por padrão uma vez por interação, até completed.
 8. Abrir downloadUrl diretamente no navegador, sem x-api-key, antes da expiração.
 
 Todo teste pago futuro deve declarar previamente um limite máximo de custo. Nunca reutilizar tokens antigos para testar replay.
