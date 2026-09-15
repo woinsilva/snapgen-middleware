@@ -3,13 +3,18 @@ import { ApiError } from '../errors.js';
 import { createProjectSchema, projectIdSchema, projectStateRequestSchema } from './project.schemas.js';
 import type { StatelessProjectService } from './project.service.js';
 import type { EphemeralOutputStore } from './project-output-store.js';
+import type { RenderJobManager } from './render-job.manager.js';
 
-export function createProjectController(service?: StatelessProjectService, outputStore?: EphemeralOutputStore): {
-  start: RequestHandler; continue: RequestHandler; render: RequestHandler; output: RequestHandler;
+export function createProjectController(service?: StatelessProjectService, outputStore?: EphemeralOutputStore, renderJobs?: RenderJobManager): {
+  start: RequestHandler; continue: RequestHandler; render: RequestHandler; renderStatus: RequestHandler; output: RequestHandler;
 } {
   const requiredService = () => {
     if (!service) throw new ApiError(503, 'V3_NOT_CONFIGURED', 'Stateless V3 requires PROJECT_STATE_SECRET.');
     return service;
+  };
+  const requiredRenderJobs = () => {
+    if (!renderJobs) throw new ApiError(503, 'PROJECT_RENDERING_UNAVAILABLE', 'Asynchronous project rendering is not configured.');
+    return renderJobs;
   };
   return {
     start: async (request, response) => {
@@ -26,7 +31,14 @@ export function createProjectController(service?: StatelessProjectService, outpu
     },
     render: async (request, response) => {
       const input = projectStateRequestSchema.parse(request.body);
-      const result = await requiredService().render(input.projectState, response.locals.requestId);
+      const result = requiredRenderJobs().start(input.projectState, response.locals.requestId);
+      response.locals.projectId = result.projectId;
+      response.status(202).json(result);
+    },
+    renderStatus: async (request, response) => {
+      const projectId = projectIdSchema.parse(request.params.projectId);
+      const renderJobId = projectIdSchema.parse(request.params.renderJobId);
+      const result = requiredRenderJobs().get(projectId, renderJobId);
       response.locals.projectId = result.projectId;
       response.json(result);
     },
@@ -39,6 +51,8 @@ export function createProjectController(service?: StatelessProjectService, outpu
         const output = requiredService().authorizeOutput(projectId, token);
         if (!outputStore) throw new ApiError(503, 'PROJECT_OUTPUT_UNAVAILABLE', 'Ephemeral project output is unavailable.');
         const path = await outputStore.resolve(output);
+        response.setHeader('Cache-Control', 'private, no-store');
+        response.setHeader('Referrer-Policy', 'no-referrer');
         response.download(path, `${projectId}.mp4`, (error) => { if (error) next(error); });
       } catch (error) { next(error); }
     },

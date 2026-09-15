@@ -179,9 +179,7 @@ export class StatelessProjectService {
   async render(projectState: string, requestId: string): Promise<ProjectResponse> {
     const state = structuredClone(this.tokens.verify(projectState));
     if (state.status === 'completed') return this.response(state, projectState);
-    if (state.status !== 'assembling' || state.scenes.some((scene) => scene.status !== 'completed')) {
-      throw new ApiError(409, 'PROJECT_NOT_READY_TO_RENDER', 'All project scenes must be completed before rendering.');
-    }
+    this.assertRenderableState(state);
     if (!this.renderer) throw new ApiError(503, 'PROJECT_RENDERING_UNAVAILABLE', 'Project rendering is not configured.');
     const output = await this.renderer.render(state, requestId);
     assertProjectTransition('assembling', 'completed');
@@ -191,6 +189,12 @@ export class StatelessProjectService {
   }
 
   verify(projectState: string): ValidatedProjectState { return this.tokens.verify(projectState); }
+
+  assertReadyToRender(projectState: string): ValidatedProjectState {
+    const state = this.tokens.verify(projectState);
+    this.assertRenderableState(state);
+    return state;
+  }
 
   authorizeOutput(projectId: string, accessToken: string) { return this.tokens.verifyOutputAccess(accessToken, projectId); }
 
@@ -218,5 +222,11 @@ export class StatelessProjectService {
       outputExpiresAt: state.output?.expiresAt ?? null,
       error: state.errorCode && state.errorMessage ? { code: state.errorCode, message: state.errorMessage, retryable: false } : null,
     };
+  }
+
+  private assertRenderableState(state: ValidatedProjectState): void {
+    if (state.status !== 'assembling' || state.scenes.some((scene) => scene.status !== 'completed')) {
+      throw new ApiError(409, 'PROJECT_NOT_READY_TO_RENDER', 'All project scenes must be completed before rendering.');
+    }
   }
 }

@@ -1,0 +1,38 @@
+CHECKLIST — CUSTOM GPT V3 STATELESS
+
+[ ] 1. Abrir o GPT existente “SnapGen AI Video Studio”; não criar outro GPT.
+[ ] 2. Não alterar nome, Knowledge ou Capabilities sem motivo independente.
+[ ] 3. Copiar integralmente INSTRUCTIONS-FINAL.txt para Instructions.
+[ ] 4. Abrir a Action existente e substituir o schema pelo conteúdo integral de OPENAPI-FINAL.yaml.
+[ ] 5. Authentication: API Key.
+[ ] 6. Authentication Type: Custom.
+[ ] 7. Header: x-api-key.
+[ ] 8. Manter o valor atual de MIDDLEWARE_API_KEY; não revelar, copiar para arquivos ou substituir o secret.
+[ ] 9. Privacy Policy: https://snapgen-middleware.onrender.com/privacy
+[ ] 10. Confirmar estas 10 Actions, sem colisões:
+    [ ] healthCheck
+    [ ] getVideoModels
+    [ ] generateVideo
+    [ ] getVideoGenerationStatus
+    [ ] extendVideo
+    [ ] generateStoryboard
+    [ ] startVideoProject
+    [ ] continueVideoProject
+    [ ] renderVideoProject
+    [ ] getVideoProjectRenderStatus
+[ ] 11. Confirmar que o endpoint binário /video/projects/output/{projectId} NÃO aparece como Action.
+[ ] 12. Confirmar marcação consequential=true em generateVideo, extendVideo, generateStoryboard e continueVideoProject.
+[ ] 13. Confirmar consequential=false em startVideoProject, renderVideoProject e todos os GETs.
+[ ] 14. Salvar como draft; não publicar antes dos testes gratuitos.
+[ ] 15. Executar os testes gratuitos de GPT-PREVIEW-TESTS.txt na ordem.
+[ ] 16. Confirmar que getVideoModels não resulta em contagem total de modelos na resposta do GPT.
+[ ] 17. Confirmar que um projeto de 70s cria exatamente 9 cenas antes de start.
+[ ] 18. Confirmar que start preserva projectState internamente e não o mostra ao usuário.
+[ ] 19. Teste crítico na mesma conversa: T1 → T2 → T3 → T4, sempre substituindo o token e nunca reutilizando versões anteriores.
+[ ] 20. Se o GPT perder projectState, confirmar que ele para sem reconstruir token ou iniciar outro projeto.
+[ ] 21. Confirmar que render retorna renderJobId rapidamente e que o GPT consulta status pelos mesmos projectId/renderJobId.
+[ ] 22. Confirmar que somente status=completed faz o GPT apresentar downloadUrl como link temporário.
+[ ] 23. Executar teste pago apenas em etapa posterior, com limite de custo explícito e autorização do usuário.
+[ ] 24. Após todos os testes, revisar o diff manual do Builder e só então publicar.
+
+Observação operacional: render jobs e outputs são efêmeros e vinculados à instância. Restart/deploy pode causar RENDER_JOB_NOT_FOUND ou perda do arquivo. Não gerar novamente automaticamente.

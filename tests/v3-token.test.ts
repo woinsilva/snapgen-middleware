@@ -59,9 +59,10 @@ describe('V3 Project State Token', () => {
   });
 
   it('supports previous-secret verification for rotation', () => {
-    const { service } = serviceWith(unusedProvider);
+    const now = new Date('2026-09-14T12:00:00.000Z');
+    const { service } = serviceWith(unusedProvider, now);
     const token = service.start(projectInput()).projectState;
-    const rotated = new ProjectStateTokenService('new-test-secret-that-is-at-least-32-characters', tokenSecret);
+    const rotated = new ProjectStateTokenService('new-test-secret-that-is-at-least-32-characters', tokenSecret, 65_536, () => now);
     expect(rotated.verify(token).projectId).toBe(service.verify(token).projectId);
   });
 

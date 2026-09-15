@@ -1,0 +1,98 @@
+PACOTE FINAL — SNAPGEN AI VIDEO STUDIO V3 STATELESS
+
+ESCOPO
+
+- Runtime adaptado para render assíncrono compatível com o timeout de GPT Actions.
+- Download MP4 removido do contrato das Actions e exposto por URL temporária assinada, diretamente utilizável no navegador.
+- Actions V1/V2 preservadas.
+- Custom GPT publicado, Render e secrets não foram alterados durante esta preparação.
+
+CONTRATO ALTERADO
+
+Anterior:
+- POST /video/projects/render aguardava todo o processamento e retornava HTTP 200 com ProjectResponse.
+- GET /video/projects/output/{projectId} exigia x-api-key.
+
+Novo:
+- POST /video/projects/render valida o state, agenda o trabalho efêmero e retorna HTTP 202 com projectId, renderJobId e status processing.
+- GET /video/projects/{projectId}/render/{renderJobId} retorna JSON com processing, completed ou failed.
+- Quando completed, o status inclui o novo projectState e uma downloadUrl absoluta temporária.
+- GET /video/projects/output/{projectId}?access=... não exige x-api-key; o acesso é autorizado pelo token HMAC temporário vinculado ao projeto, handle e expiração.
+
+IMPLEMENTAÇÃO
+
+- RenderJobManager mantém o menor estado temporário necessário em Map por instância.
+- O processamento pesado inicia fora do lifecycle da requisição que retornou 202.
+- Jobs são deduplicados por projectId enquanto permanecem no Map.
+- Falhas inesperadas são reduzidas a PROJECT_RENDER_FAILED sem detalhes internos.
+- Job metadata expira por TTL; output também possui TTL e cleanup próprios.
+- RENDER_EXTERNAL_URL, fornecida automaticamente pelo Render, forma a URL pública. PUBLIC_BASE_URL é um override opcional para outros ambientes.
+
+SEGURANÇA
+
+- Todas as Actions normais continuam protegidas por x-api-key.
+- Somente o endpoint binário de download é público por token assinado.
+- Token alterado, expirado ou associado a outro projeto é rejeitado.
+- O handle do arquivo é UUID gerado pelo servidor e resolvido somente dentro do diretório de outputs.
+- Caminhos internos e secrets não aparecem nas respostas.
+- Cache-Control private, no-store e Referrer-Policy no-referrer são enviados no download.
+
+ARTEFATOS DO CUSTOM GPT
+
+- OPENAPI-FINAL.yaml: contrato V1/V2/V3 com somente Actions textuais/JSON.
+- INSTRUCTIONS-FINAL.txt: roteamento simple/long, Project State, orçamento, polling, render e output temporário.
+- GPT-BUILDER-CHECKLIST.txt: atualização manual e validação no Builder.
+- GPT-PREVIEW-TESTS.txt: testes gratuitos e testes pagos futuros separados.
+- HTTP-FLOW-EXAMPLE.md: fluxo HTTP completo com placeholders seguros.
+
+ACTIONS
+
+- healthCheck
+- generateVideo
+- getVideoModels
+- extendVideo
+- generateStoryboard
+- startVideoProject
+- continueVideoProject
+- renderVideoProject
+- getVideoProjectRenderStatus
+- getVideoGenerationStatus
+
+CONSEQUENTIAL
+
+- true: generateVideo, extendVideo, generateStoryboard, continueVideoProject.
+- false: startVideoProject, renderVideoProject e todos os GETs.
+- Marcação feita com x-openai-isConsequential.
+
+VARIÁVEIS
+
+- PROJECT_RENDER_JOB_TTL_SECONDS: opcional, default 3600.
+- PUBLIC_BASE_URL: opcional; override da URL pública fora do Render.
+- RENDER_EXTERNAL_URL: fornecida automaticamente pelo Render.
+- Nenhum novo secret foi introduzido.
+
+VALIDAÇÃO
+
+- npm ci: aprovado, zero vulnerabilidades.
+- typecheck: aprovado.
+- lint: aprovado.
+- build: aprovado.
+- testes: 87 aprovados, 1 teste de mídia ignorado, 88 total.
+- testes V3 assíncronos: resposta 202, processing, completed, failed, autenticação do status e URL absoluta cobertos.
+- download: acesso público assinado, adulteração, expiração, projeto incorreto, output ausente e headers seguros cobertos.
+- OpenAPI principal e OpenAPI do GPT: válidos no Redocly, sem erros; somente avisos editoriais não bloqueantes de licença/4xx público.
+- operationIds: 10 e únicos no artefato do GPT.
+- endpoint video/mp4: ausente do artefato do GPT.
+- valores 16:9, 720p e 1080p tratados como strings.
+- nenhuma chamada SnapGen real e nenhuma operação paga executada.
+
+LIMITAÇÕES RESTANTES
+
+- Jobs e arquivos são efêmeros. Restart/deploy pode interromper um render e apagar job/output.
+- O Map é por instância. Escalar para múltiplas instâncias exige job store e object storage compartilhados.
+- O GPT deve preservar o Project State mais recente; tokens antigos continuam sujeitos à limitação de replay stateless já documentada.
+- O link deixa de funcionar após expiração ou cleanup e não implica armazenamento permanente.
+
+STATUS
+
+Implementação e artefatos preparados localmente. A atualização/publicação manual do Custom GPT permanece pendente.

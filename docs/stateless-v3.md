@@ -7,8 +7,9 @@ V3 orchestrates long videos without a database, persistent queue, background wor
 1. `POST /video/projects/start` validates the complete plan and returns a signed Project State Token. It never calls SnapGen.
 2. `POST /video/projects/continue` verifies the latest token and performs one step: one `POST /video/generate` for the next pending scene, or one status lookup for the UUID of the processing scene.
 3. After every successful call, the client must discard the previous token and retain only the replacement.
-4. When every scene is complete, `POST /video/projects/render` refreshes each media URL from its UUID, downloads the clips, normalizes them, concatenates them, and trims the final MP4.
-5. The returned download URL points to an ephemeral local file and expires after a short configured interval.
+4. When every scene is complete, `POST /video/projects/render` validates the state, creates an in-memory render job, and returns `202` immediately.
+5. `GET /video/projects/{projectId}/render/{renderJobId}` reports `processing`, `completed`, or `failed`. The background job refreshes each media URL from its UUID, downloads the clips, normalizes them, concatenates them, and trims the final MP4.
+6. A completed status includes the latest `projectState` and an absolute, temporary download URL. The browser-download endpoint uses only its signed access token and does not require `x-api-key`.
 
 Only `veo-3.1-fast` is enabled initially. It uses independent eight-second generations. Although the V2 capability says that Extend exists, the real chaining test did not complete successfully, so `extendChainValidated` is `false` and V3 never invokes Extend automatically.
 
@@ -73,4 +74,8 @@ The final file lives in the container temporary filesystem. The response include
 - expiry or cleanup makes it unavailable;
 - the client should download immediately.
 
-Reliable retention is impossible on ephemeral Render storage without external storage, deliberately outside this version.
+Render job metadata is also an in-memory, per-instance map with a bounded TTL. A restart or deploy removes job metadata and temporary files; a status lookup then returns `RENDER_JOB_NOT_FOUND`. A multi-instance deployment would require shared job and object storage, deliberately outside this version. Reliable retention is impossible on ephemeral Render storage without external storage.
+
+The public download URL contains a short-lived HMAC-signed access token bound to the project ID, output handle, and expiry. The endpoint validates the signature and expiry, resolves only server-generated UUID handles inside the output directory, and does not expose filesystem paths or API keys. All other video and project endpoints continue to require `x-api-key`.
+
+The external URL is built from `PUBLIC_BASE_URL` when explicitly configured, otherwise from Render's automatic `RENDER_EXTERNAL_URL`, and finally from the local server URL during development. `PROJECT_RENDER_JOB_TTL_SECONDS` controls how long job metadata is retained and defaults to 3,600 seconds.

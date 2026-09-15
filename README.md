@@ -167,6 +167,8 @@ RATE_LIMIT_MAX=30
 NODE_ENV=development
 LOG_LEVEL=info
 PROJECT_STATE_SECRET=
+PROJECT_RENDER_JOB_TTL_SECONDS=3600
+PUBLIC_BASE_URL=
 ```
 
 O `.env` real é ignorado pelo Git e pelo contexto Docker. Nunca configure `SNAPGEN_API_KEY` no GPT.
@@ -175,7 +177,7 @@ O `.env` real é ignorado pelo Git e pelo contexto Docker. Nunca configure `SNAP
 
 ## Projetos de vídeo stateless (V3)
 
-A V3 adiciona `/video/projects/start`, `/video/projects/continue`, `/video/projects/render` e uma rota temporária de download. Ela usa um Project State Token assinado em vez de banco ou worker. O cliente deve preservar somente o token mais recente. Consulte [docs/stateless-v3.md](docs/stateless-v3.md) para fluxo, risco de replay, budget guard, segurança de mídia e limites da entrega efêmera.
+A V3 adiciona `/video/projects/start`, `/video/projects/continue`, render assíncrono via `/video/projects/render`, status JSON em `/video/projects/{projectId}/render/{renderJobId}` e uma rota temporária de download. Ela usa um Project State Token assinado, sem banco ou worker externo. O cliente deve preservar somente o token mais recente. Jobs e arquivos de render são efêmeros e podem ser perdidos em restart/deploy. Consulte [docs/stateless-v3.md](docs/stateless-v3.md) para fluxo, risco de replay, budget guard, segurança de mídia e limites da entrega efêmera.
 
 ## Render
 
@@ -212,7 +214,7 @@ docker compose up -d --build
 
 ## GPT Action
 
-Importe `openapi.yaml`. No GPT Builder configure **Authentication → API Key → Custom**, header `x-api-key`, usando `MIDDLEWARE_API_KEY`.
+Para a integração V3, importe `custom-gpt-v3-final/OPENAPI-FINAL.yaml`. No GPT Builder configure **Authentication → API Key → Custom**, header `x-api-key`, usando `MIDDLEWARE_API_KEY`. O endpoint binário de download não faz parte das Actions; o GPT recebe uma URL temporária textual pelo status do render.
 
 Privacy Policy pública:
 

@@ -81,7 +81,7 @@ describe('V3 stateless project API', () => {
     expect(v3.body.error).toBe('V3_NOT_CONFIGURED');
   });
 
-  it('serves only authorized middleware output with safe MP4 headers and clear missing-file errors', async () => {
+  it('serves signed public output without x-api-key and rejects invalid access', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'v3-output-api-test-'));
     try {
       const source = join(directory, 'source.mp4');
@@ -97,19 +97,33 @@ describe('V3 stateless project API', () => {
       state.output = await outputs.store(source, 60);
       const accessToken = tokens.signOutputAccess(state.projectId, state.output);
       const app = createApp(env, provider, service, outputs);
-      const response = await request(app).get(`/video/projects/output/${state.projectId}`).query({ access: accessToken }).set('x-api-key', env.MIDDLEWARE_API_KEY);
+      const response = await request(app).get(`/video/projects/output/${state.projectId}`).query({ access: accessToken });
       expect(response.status).toBe(200);
       expect(response.headers['content-type']).toContain('video/mp4');
       expect(response.headers['content-disposition']).toContain(`filename="${state.projectId}.mp4"`);
+      expect(response.headers['cache-control']).toBe('private, no-store');
       expect(response.body).toHaveLength(4);
 
-      const invalidProject = await request(app).get('/video/projects/output/not-a-uuid').query({ access: accessToken }).set('x-api-key', env.MIDDLEWARE_API_KEY);
+      const invalidProject = await request(app).get('/video/projects/output/not-a-uuid').query({ access: accessToken });
       expect(invalidProject.status).toBe(400);
+      const wrongProject = await request(app).get('/video/projects/output/60c8481d-3089-402c-b948-3ca7c9843891').query({ access: accessToken });
+      expect(wrongProject.status).toBe(400);
+      const tampered = `${accessToken.slice(0, -1)}x`;
+      const tamperedResponse = await request(app).get(`/video/projects/output/${state.projectId}`).query({ access: tampered });
+      expect(tamperedResponse.status).toBe(400);
       const missing = { handle: '60c8481d-3089-402c-b948-3ca7c9843891', expiresAt: '2026-09-14T12:01:00.000Z' };
       const missingAccess = tokens.signOutputAccess(state.projectId, missing);
-      const missingResponse = await request(app).get(`/video/projects/output/${state.projectId}`).query({ access: missingAccess }).set('x-api-key', env.MIDDLEWARE_API_KEY);
+      const missingResponse = await request(app).get(`/video/projects/output/${state.projectId}`).query({ access: missingAccess });
       expect(missingResponse.status).toBe(410);
       expect(missingResponse.body.error).toBe('PROJECT_OUTPUT_UNAVAILABLE');
+
+      const expiredTokens = testTokens(new Date('2026-09-14T12:02:00.000Z'));
+      const expiredService = new StatelessProjectService(expiredTokens, provider);
+      const expiredAccess = expiredTokens.signOutputAccess(state.projectId, missing);
+      const expiredResponse = await request(createApp(env, provider, expiredService, outputs))
+        .get(`/video/projects/output/${state.projectId}`).query({ access: expiredAccess });
+      expect(expiredResponse.status).toBe(410);
+      expect(expiredResponse.body.error).toBe('PROJECT_OUTPUT_EXPIRED');
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
 });

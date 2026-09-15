@@ -14,13 +14,14 @@ import { createVideoRouter } from './routes/video.routes.js';
 import { SnapGenService } from './services/snapgen.service.js';
 import type { VideoProvider } from './providers/video.provider.js';
 import { createLogger } from './utils/logger.js';
-import { createProjectRouter } from './projects/project.routes.js';
+import { createProjectOutputRouter, createProjectRouter } from './projects/project.routes.js';
 import { ProjectStateTokenService } from './projects/project-state-token.js';
 import { StatelessProjectService } from './projects/project.service.js';
 import { EphemeralOutputStore } from './projects/project-output-store.js';
 import { SecureMediaDownloader } from './media/secure-media-downloader.js';
 import { FfmpegMediaProcessor } from './media/ffmpeg-media-processor.js';
 import { EphemeralProjectRenderer } from './projects/ephemeral-project-renderer.js';
+import { RenderJobManager } from './projects/render-job.manager.js';
 
 function corsOrigins(value: string): true | string[] {
   if (value.trim() === '*') return true;
@@ -60,6 +61,10 @@ export function createApp(
     );
     return new StatelessProjectService(tokens, provider, renderer, env.PROJECT_STATE_TOKEN_TTL_SECONDS ?? 2_592_000);
   })() : undefined);
+  const publicBaseUrl = env.PUBLIC_BASE_URL ?? env.RENDER_EXTERNAL_URL ?? `http://localhost:${env.PORT}`;
+  const renderJobs = projectService
+    ? new RenderJobManager(projectService, publicBaseUrl, env.PROJECT_RENDER_JOB_TTL_SECONDS ?? 3_600)
+    : undefined;
   const videoRateLimit = rateLimit({
     windowMs: env.RATE_LIMIT_WINDOW_MS,
     limit: env.RATE_LIMIT_MAX,
@@ -79,7 +84,8 @@ export function createApp(
   app.use('/health', healthRouter);
   app.use('/privacy', privacyRouter);
   app.use('/video/models', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), modelsRouter);
-  app.use('/video/projects', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), createProjectRouter(projectService, outputStore));
+  app.use('/video/projects/output', videoRateLimit, createProjectOutputRouter(projectService, outputStore));
+  app.use('/video/projects', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), createProjectRouter(projectService, renderJobs));
   app.use('/video', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), createVideoRouter(provider));
   app.use(notFoundHandler);
   app.use(createErrorHandler(env));

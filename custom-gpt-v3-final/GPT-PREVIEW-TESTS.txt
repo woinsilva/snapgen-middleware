@@ -1,0 +1,44 @@
+GPT PREVIEW TESTS — V3 STATELESS
+
+FASE A — GRATUITA, EXECUTAR PRIMEIRO
+
+TESTE 1 — CAPABILITIES
+Prompt: “Quais modelos suportam projetos longos e image-to-video?”
+Esperado: consultar getVideoModels quando necessário; apresentar capabilities reais; não informar, calcular ou estimar a quantidade total de modelos; não gerar vídeo.
+
+TESTE 2 — PLANEJAMENTO SEM ACTION PAGA
+Prompt: “Planeje um vídeo de 70 segundos com veo-3.1-fast sobre uma aventura infantil, 16:9 e 1080p, mas não gere ainda.”
+Esperado: escolher LONG VIDEO PROJECT FLOW; calcular exatamente 9 cenas; preparar concept, visualBible e prompts autocontidos; não chamar continueVideoProject, generateVideo, Extend ou Storyboard.
+
+TESTE 3 — START GRATUITO
+Prompt: “Valide e crie somente o estado desse projeto, sem iniciar nenhuma geração paga.”
+Esperado: chamar apenas startVideoProject; receber status planning; preservar projectState internamente; não exibir ou pedir que o usuário copie o token; informar que zero gerações foram iniciadas.
+
+TESTE 4 — TOKEN PERDIDO
+Em uma conversa de teste sem projectState disponível, diga: “Continue o projeto anterior.”
+Esperado: parar; informar que o estado necessário não está disponível; não reconstruir token; não criar projeto novo; não chamar Action paga.
+
+TESTE 5 — SIMPLE VIDEO ROUTING SEM EXECUTAR
+Prompt: “Como você trataria um vídeo único de 8 segundos com veo-3.1-fast? Não gere.”
+Esperado: escolher SIMPLE VIDEO FLOW com generateVideo; não iniciar long project; não executar POST.
+
+TESTE 6 — STORYBOARD E EXTEND
+Prompt: “Quais opções existem para storyboard e para estender vídeo? Não execute nada.”
+Esperado: preservar regras V2; storyboard aceita grok-video/grok-3 e rejeita grok-lower; Extend depende de supportsExtend; não misturar essas operações com long project.
+
+TESTE 7 — RENDER JOB SEM ESTADO PRONTO
+Prompt: “Renderize o projeto, mas eu não tenho um projectState com todas as cenas concluídas.”
+Esperado: não inventar token/IDs nem chamar render; explicar que todas as cenas e o estado mais recente são necessários.
+
+FASE B — TESTES PAGOS FUTUROS, NÃO EXECUTAR NESTA ETAPA
+
+1. Autorizar explicitamente um projeto completo e confirmar que o GPT informa o máximo de gerações planejadas antes do primeiro continue.
+2. Na mesma conversa, validar T1 → T2 → T3 → T4, sem chamadas paralelas e sem reutilização de token.
+3. Confirmar que polling de cena processing consulta o mesmo UUID sem novo POST.
+4. Confirmar que timeout/ambiguous interrompe o fluxo sem retry.
+5. Completar todas as cenas dentro de maxPaidOperations.
+6. Iniciar renderVideoProject e confirmar resposta 202 rápida.
+7. Consultar getVideoProjectRenderStatus pelos mesmos IDs até completed, sem polling agressivo.
+8. Abrir downloadUrl diretamente no navegador, sem x-api-key, antes da expiração.
+
+Todo teste pago futuro deve declarar previamente um limite máximo de custo. Nunca reutilizar tokens antigos para testar replay.
