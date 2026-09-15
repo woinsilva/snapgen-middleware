@@ -8,6 +8,8 @@ export function createProjectRouter(service?: StatelessProjectService, renderJob
   const router = Router();
   const controller = createProjectController(service, undefined, renderJobs);
   router.post('/start', controller.start);
+  router.post('/advance', controller.advance);
+  router.post('/status', controller.status);
   router.post('/continue', controller.continue);
   router.post('/render', controller.render);
   router.get('/:projectId/render/:renderJobId', controller.renderStatus);

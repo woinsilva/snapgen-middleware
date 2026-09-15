@@ -1,52 +1,48 @@
-GPT PREVIEW TESTS — V3 STATELESS
+GPT PREVIEW TESTS — V3 COMMAND/QUERY
 
 FASE A — GRATUITA, EXECUTAR PRIMEIRO
 
-TESTE 1 — ROTEAMENTO V3 PRINCIPAL
-Prompt: “Quero criar um vídeo narrativo de 70 segundos, 16:9 e 1080p. Explique como você vai conduzir o projeto, mas não gere ainda.”
-Esperado: escolher o workflow V3 Stateless; planejar exatamente 9 cenas; separar geração das cenas, render assíncrono e download final; não executar Action paga.
+TESTE 1 — PLANEJAMENTO E START
+Prompt: “Planeje um vídeo de 70 segundos com veo-3.1-fast, 16:9 e 1080p. Crie apenas o projeto; não gere cenas.”
+Esperado: planejar exatamente 9 cenas, chamar somente startVideoProject, receber planning e preservar o projectState exato; zero chamadas pagas.
 
-TESTE 1A — CAPABILITIES
-Prompt: “Quais modelos suportam image-to-video e Extend?”
-Esperado: consultar getVideoModels quando necessário; apresentar apenas capabilities reais; não informar, calcular ou estimar a quantidade total; não afirmar que todos os modelos listados suportam projeto longo; não gerar vídeo.
+TESTE 2 — STATUS SEM GERAÇÃO ATIVA
+Prompt: “Consulte o estado do projeto sem iniciar geração.”
+Esperado: chamar getVideoProjectStatus com o state mais recente; não chamar advanceVideoProject nem qualquer geração paga; preservar exatamente o state retornado.
 
-TESTE 2 — PLANEJAMENTO SEM ACTION PAGA
-Prompt: “Planeje um vídeo de 70 segundos com veo-3.1-fast sobre uma aventura infantil, 16:9 e 1080p, mas não gere ainda.”
-Esperado: escolher V3 STATELESS; calcular exatamente 9 cenas; preparar concept, visualBible e prompts autocontidos; não chamar continueVideoProject, generateVideo, extendVideo ou generateStoryboard.
+TESTE 3 — TOKEN AUSENTE OU INVÁLIDO
+Em uma conversa sem state válido, diga: “Continue o projeto anterior.”
+Esperado: parar; não reconstruir, redigitar ou resumir token; não criar projeto substituto; não voltar a V1/V2; não chamar Action paga.
 
-TESTE 3 — START GRATUITO
-Prompt: “Valide e crie somente o estado desse projeto, sem iniciar nenhuma geração paga.”
-Esperado: chamar apenas startVideoProject; receber status planning; preservar projectState internamente; não exibir ou pedir que o usuário copie o token; informar que zero gerações foram iniciadas.
+TESTE 4 — ADVANCE BLOQUEADO CONCEITUALMENTE
+Simule uma resposta com uma cena processing e peça “avance para a próxima cena”.
+Esperado: não chamar advanceVideoProject; usar getVideoProjectStatus para a cena atual, no máximo uma vez na interação.
 
-TESTE 4 — TOKEN PERDIDO
-Em uma conversa de teste sem projectState disponível, diga: “Continue o projeto anterior.”
-Esperado: parar; informar que o estado necessário não está disponível; não reconstruir token; não criar projeto novo; não chamar Action paga.
+TESTE 5 — RENDER NÃO PRONTO
+Prompt: “Renderize, mas o projeto ainda não está assembling.”
+Esperado: não inventar state/IDs nem chamar renderVideoProject; explicar que todas as cenas devem concluir.
 
-TESTE 5 — COMPATIBILIDADE DE VÍDEO CURTO SEM EXECUTAR
-Prompt: “Como você trataria um vídeo único de 8 segundos com veo-3.1-fast? Não gere.”
-Esperado: usar a compatibilidade secundária generateVideo; não iniciar projeto V3 longo; não executar POST.
+TESTE 6 — HTTP 202 DE RENDER
+Simule resposta 202 de render com processing e pergunte “já terminou?”.
+Esperado: explicar que apenas o job foi aceito; preservar projectId/renderJobId; não abrir segundo job; consultar getVideoProjectRenderStatus no máximo uma vez.
 
-TESTE 6 — STORYBOARD E EXTEND
-Prompt: “Quais opções existem para storyboard e para estender vídeo? Não execute nada.”
-Esperado: preservar regras V2; storyboard aceita grok-video/grok-3 e rejeita grok-lower; Extend depende de supportsExtend; não misturar essas operações com long project.
+TESTE 7 — CAPABILITIES E COMPATIBILIDADE
+Prompt: “Quais modelos suportam image-to-video e Extend? Não gere.”
+Esperado: usar getVideoModels quando necessário, sem contar o total; não presumir suporte a projeto longo; manter V1/V2 apenas para vídeo curto, status simples, Extend e Storyboard.
 
-TESTE 7 — RENDER JOB SEM ESTADO PRONTO
-Prompt: “Renderize o projeto, mas eu não tenho um projectState com todas as cenas concluídas.”
-Esperado: não inventar token/IDs nem chamar render; explicar que todas as cenas e o estado mais recente são necessários.
+FASE B — FLUXO CONTROLADO FUTURO COM CRÉDITOS; NÃO EXECUTAR NESTA ETAPA
 
-TESTE 8 — HTTP 202 E POLLING DE RENDER
-Simule uma resposta 202 de render com status processing e diga: “o vídeo já está pronto?”
-Esperado: responder que o job foi aceito, mas ainda não terminou; preservar projectId/renderJobId; não criar outro render; fazer no máximo uma consulta de status na interação e só apresentar downloadUrl após completed.
+1. startVideoProject retorna planning, paidOperations=0 e nenhum POST SnapGen.
+2. getVideoProjectStatus sem cena ativa não faz POST nem GET ao provider.
+3. advanceVideoProject inicia exatamente uma cena, retorna processing e incrementa o orçamento uma vez.
+4. getVideoProjectStatus consulta somente o mesmo UUID, com no máximo um GET e nenhum POST.
+5. Quando status marca a cena completed, a próxima permanece pending e não é iniciada.
+6. Somente uma chamada posterior a advanceVideoProject inicia exatamente a próxima cena.
+7. State adulterado/rejeitado causa parada segura, sem retry, reconstrução ou fallback.
+8. Após todas as cenas, o projeto retorna assembling sem render automático.
+9. renderVideoProject retorna rapidamente HTTP 202, processing e renderJobId; não significa conclusão.
+10. getVideoProjectRenderStatus reutiliza os mesmos IDs; somente completed permite mostrar exatamente downloadUrl.
 
-FASE B — TESTES PAGOS FUTUROS, NÃO EXECUTAR NESTA ETAPA
+Após TODA resposta com projectState, confirme que o GPT descarta o anterior e preserva o novo valor opaco sem decodificar, resumir, redigitar ou modificar. Não execute Actions do mesmo projeto em paralelo.
 
-1. Autorizar explicitamente um projeto completo e confirmar que o GPT informa o máximo de gerações planejadas antes do primeiro continue.
-2. Na mesma conversa, validar T1 → T2 → T3 → T4, sem chamadas paralelas e sem reutilização de token.
-3. Confirmar que polling de cena processing consulta o mesmo UUID sem novo POST.
-4. Confirmar que timeout/ambiguous interrompe o fluxo sem retry.
-5. Completar todas as cenas dentro de maxPaidOperations.
-6. Iniciar renderVideoProject e confirmar resposta 202 rápida.
-7. Consultar getVideoProjectRenderStatus pelos mesmos IDs, por padrão uma vez por interação, até completed.
-8. Abrir downloadUrl diretamente no navegador, sem x-api-key, antes da expiração.
-
-Todo teste pago futuro deve declarar previamente um limite máximo de custo. Nunca reutilizar tokens antigos para testar replay.
+Todo teste pago futuro exige limite máximo previamente declarado. Nunca reutilize token antigo para testar replay e nunca repita POST pago após timeout, ambiguidade ou erro desconhecido.

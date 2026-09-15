@@ -26,7 +26,10 @@ const provider: VideoProvider = {
 
 describe('V3 stateless project API', () => {
   it('preserves x-api-key authentication', async () => {
-    expect((await request(createApp(env, provider)).post('/video/projects/start').send(projectInput())).status).toBe(401);
+    const app = createApp(env, provider);
+    expect((await request(app).post('/video/projects/start').send(projectInput())).status).toBe(401);
+    expect((await request(app).post('/video/projects/advance').send({ projectState: 'pst1.test.test' })).status).toBe(401);
+    expect((await request(app).post('/video/projects/status').send({ projectState: 'pst1.test.test' })).status).toBe(401);
   });
 
   it('starts a valid project with 202 and no provider call', async () => {
@@ -59,16 +62,43 @@ describe('V3 stateless project API', () => {
     expect(invalidScenes.status).toBe(400);
   });
 
-  it('continues from a valid token and rejects a tampered token', async () => {
+  it('separates paid advance from read-only status and rejects a tampered token', async () => {
     const app = createApp(env, provider);
+    vi.mocked(provider.generateVideo).mockClear();
+    vi.mocked(provider.getVideo).mockClear();
     const started = await request(app).post('/video/projects/start').set('x-api-key', env.MIDDLEWARE_API_KEY).send(projectInput());
-    const continued = await request(app).post('/video/projects/continue').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: started.body.projectState });
-    expect(continued.status).toBe(200);
-    expect(continued.body.status).toBe('generating');
-    const tampered = `${started.body.projectState.slice(0, -1)}x`;
-    const rejected = await request(app).post('/video/projects/continue').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: tampered });
+    const idleStatus = await request(app).post('/video/projects/status').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: started.body.projectState });
+    expect(idleStatus.status).toBe(200);
+    expect(idleStatus.body.projectState).toBe(started.body.projectState);
+    expect(provider.generateVideo).not.toHaveBeenCalled();
+    expect(provider.getVideo).not.toHaveBeenCalled();
+
+    const advanced = await request(app).post('/video/projects/advance').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: idleStatus.body.projectState });
+    expect(advanced.status).toBe(200);
+    expect(advanced.body.status).toBe('generating');
+    expect(provider.generateVideo).toHaveBeenCalledTimes(1);
+
+    const blockedAdvance = await request(app).post('/video/projects/advance').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: advanced.body.projectState });
+    expect(blockedAdvance.status).toBe(409);
+    expect(blockedAdvance.body.error).toBe('PROJECT_STATUS_REQUIRED');
+    expect(provider.generateVideo).toHaveBeenCalledTimes(1);
+
+    const polled = await request(app).post('/video/projects/status').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: advanced.body.projectState });
+    expect(polled.status).toBe(200);
+    expect(provider.getVideo).toHaveBeenCalledTimes(1);
+    expect(provider.generateVideo).toHaveBeenCalledTimes(1);
+
+    const tampered = `${started.body.projectState.slice(0, -1)}${started.body.projectState.endsWith('x') ? 'y' : 'x'}`;
+    const rejected = await request(app).post('/video/projects/status').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: tampered });
     expect(rejected.status).toBe(400);
     expect(rejected.body.error).toBe('INVALID_PROJECT_STATE');
+  });
+
+  it('keeps the legacy continue endpoint authenticated and available', async () => {
+    const app = createApp(env, provider);
+    const started = await request(app).post('/video/projects/start').set('x-api-key', env.MIDDLEWARE_API_KEY).send(projectInput());
+    expect((await request(app).post('/video/projects/continue').send({ projectState: started.body.projectState })).status).toBe(401);
+    expect((await request(app).post('/video/projects/continue').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: started.body.projectState })).status).toBe(200);
   });
 
   it('keeps V1/V2 available when PROJECT_STATE_SECRET is absent', async () => {
@@ -79,6 +109,8 @@ describe('V3 stateless project API', () => {
     const v3 = await request(app).post('/video/projects/start').set('x-api-key', env.MIDDLEWARE_API_KEY).send(projectInput());
     expect(v3.status).toBe(503);
     expect(v3.body.error).toBe('V3_NOT_CONFIGURED');
+    const unavailable = await request(app).post('/video/projects/status').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: 'pst1.test.test' });
+    expect(unavailable.status).toBe(503);
   });
 
   it('serves signed public output without x-api-key and rejects invalid access', async () => {

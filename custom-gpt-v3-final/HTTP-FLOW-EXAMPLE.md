@@ -33,17 +33,27 @@ Content-Type: application/json
 }
 ```
 
-O cliente preserva `<LATEST_PROJECT_STATE>` e, após autorização de custo, avança sequencialmente:
+O cliente preserva `<LATEST_PROJECT_STATE>` e, após autorização de custo, inicia no máximo uma cena:
 
 ```http
-POST /video/projects/continue
+POST /video/projects/advance
 x-api-key: <configured-in-gpt-builder>
 Content-Type: application/json
 
 { "projectState": "<LATEST_PROJECT_STATE>" }
 ```
 
-Cada resposta substitui o token anterior. Repita de forma não paralela até todas as cenas estarem concluídas e o projeto retornar `assembling`, que é o estado real pronto para render. Então:
+Se a cena estiver `processing`, consulte somente seu status:
+
+```http
+POST /video/projects/status
+x-api-key: <configured-in-gpt-builder>
+Content-Type: application/json
+
+{ "projectState": "<LATEST_PROJECT_STATE>" }
+```
+
+`status` faz no máximo um GET ao provider, nunca inicia cena e nunca faz POST pago. Cada resposta substitui o token anterior. Quando a cena concluir, somente uma chamada posterior a `advance` inicia a próxima. Repita sem paralelismo até o projeto retornar `assembling`; então:
 
 ```http
 POST /video/projects/render

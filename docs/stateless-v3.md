@@ -5,11 +5,14 @@ V3 orchestrates long videos without a database, persistent queue, background wor
 ## Workflow
 
 1. `POST /video/projects/start` validates the complete plan and returns a signed Project State Token. It never calls SnapGen.
-2. `POST /video/projects/continue` verifies the latest token and performs one step: one `POST /video/generate` for the next pending scene, or one status lookup for the UUID of the processing scene.
-3. After every successful call, the client must discard the previous token and retain only the replacement.
-4. When every scene is complete, `POST /video/projects/render` validates the state, creates an in-memory render job, and returns `202` immediately.
-5. `GET /video/projects/{projectId}/render/{renderJobId}` reports `processing`, `completed`, or `failed`. The background job refreshes each media URL from its UUID, downloads the clips, normalizes them, concatenates them, and trims the final MP4.
-6. A completed status includes the latest `projectState` and an absolute, temporary download URL. The browser-download endpoint uses only its signed access token and does not require `x-api-key`.
+2. `POST /video/projects/advance` is the potentially paid command. It starts at most one pending scene and refuses to advance while a scene is processing.
+3. `POST /video/projects/status` is the read-only query. It performs at most one non-retrying status lookup for the currently processing UUID, never submits generation, and never starts the next scene.
+4. After every successful response containing state, the client must discard the previous token and retain the exact replacement.
+5. When every scene is complete, `POST /video/projects/render` validates the state, creates an in-memory render job, and returns `202` immediately.
+6. `GET /video/projects/{projectId}/render/{renderJobId}` reports `processing`, `completed`, or `failed`. The background job refreshes each media URL from its UUID, downloads the clips, normalizes them, concatenates them, and trims the final MP4.
+7. A completed status includes the latest `projectState` and an absolute, temporary download URL. The browser-download endpoint uses only its signed access token and does not require `x-api-key`.
+
+`POST /video/projects/continue` remains available only for backward compatibility and delegates to the appropriate command or query behavior. New clients and the Custom GPT V3 contract use `advance` and `status` exclusively.
 
 Only `veo-3.1-fast` is enabled initially. It uses independent eight-second generations. Although the V2 capability says that Extend exists, the real chaining test did not complete successfully, so `extendChainValidated` is `false` and V3 never invokes Extend automatically.
 
@@ -21,7 +24,7 @@ The format is:
 pst1.<base64url(deflateRaw(JSON))>.<base64url(HMAC-SHA256)>
 ```
 
-The signature covers the prefix and compressed payload and is compared in constant time. The payload contains project parameters, the selected `generationStrategy`, the visual bible, scenes, UUIDs, states, budget counters, timestamps, schema version, and monotonic token version. It contains no API keys, provider credentials, or provider media URLs. The current state schema requires `generationStrategy: "independent"`; `continue` and `render` reject missing or unsupported strategies when they verify the token.
+The signature covers the prefix and compressed payload and is compared in constant time. Payload and signature must use canonical unpadded Base64URL; alternate spellings are rejected even when they decode to the same bytes. The payload contains project parameters, the selected `generationStrategy`, the visual bible, scenes, UUIDs, states, budget counters, timestamps, schema version, and monotonic token version. It contains no API keys, provider credentials, or provider media URLs. The current state schema requires `generationStrategy: "independent"`; `advance`, `status`, legacy `continue`, and `render` reject missing or unsupported strategies when they verify the token.
 
 The state schema version is `2`. It was incremented when `generationStrategy` became a required signed field because this intentionally makes the earlier test-only schema-1 tokens invalid. The `pst1` envelope prefix did not change because compression and HMAC framing remain the same. No paid V3 projects existed when this compatibility break was introduced.
 
@@ -33,7 +36,7 @@ The default token limit is 65,536 bytes. `start` reserves 8,192 bytes inside tha
 
 `maxPaidOperations` equals the deterministic scene count. `maxAttemptsPerScene` is 1 and `automaticPaidRetries` is 0. An accepted or ambiguous submission consumes one budget unit. A scene with a UUID is polled and is never generated again when the current token is used.
 
-Each `continue` call performs at most one potentially paid POST. Polling and rendering do not make paid POSTs.
+Each `advance` call performs at most one potentially paid POST and never polls. Each `status` call makes no paid POST and at most one provider GET without internal retry. Polling and rendering do not make paid generation POSTs.
 
 ## Stateless replay limitation
 
@@ -46,7 +49,7 @@ The supplied SnapGen documentation does not define a generation idempotency key 
 Initial safeguards:
 
 - always replace the previous token with the newest response;
-- never call `continue` concurrently;
+- never call `advance`, `status`, or legacy `continue` concurrently;
 - never reuse a token from an earlier message/tool result;
 - process only one project at a time per conversation;
 - never retry a failed or ambiguous scene automatically.

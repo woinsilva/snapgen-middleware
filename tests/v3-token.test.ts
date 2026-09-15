@@ -23,6 +23,17 @@ describe('V3 Project State Token', () => {
     expect(started.projectState.startsWith('pst1.')).toBe(true);
   });
 
+  it('survives an exact JSON Action response/request round-trip without normalization', () => {
+    const { service } = serviceWith(unusedProvider);
+    const token = service.start({ ...projectInput(), concept: 'Floresta mágica — ação contínua' }).projectState;
+    const transported = (JSON.parse(JSON.stringify({ projectState: token })) as { projectState: string }).projectState;
+
+    expect(transported).toBe(token);
+    expect(transported).toMatch(/^pst1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    expect(transported).not.toMatch(/[=\s]/);
+    expect(() => service.verify(transported)).not.toThrow();
+  });
+
   it('rejects correctly signed states with a missing or unsupported generation strategy', () => {
     const { service } = serviceWith(unusedProvider);
     const state = service.verify(service.start(projectInput()).projectState) as unknown as Record<string, unknown>;
@@ -48,6 +59,17 @@ describe('V3 Project State Token', () => {
     const tampered = `${parts[0]}.${parts[1]}x.${parts[2]}`;
     expect(() => service.verify(tampered)).toThrow('invalid or has been modified');
     expect(() => new ProjectStateTokenService(`${tokenSecret}-wrong`).verify(token)).toThrow('invalid or has been modified');
+  });
+
+  it('rejects a non-canonical base64url spelling of otherwise identical signature bytes', () => {
+    const { service } = serviceWith(unusedProvider);
+    const token = service.start(projectInput()).projectState;
+    const parts = token.split('.');
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    const lastIndex = alphabet.indexOf(parts[2]!.at(-1)!);
+    const equivalent = `${parts[2]!.slice(0, -1)}${alphabet[lastIndex + 1]}`;
+    expect(Buffer.from(equivalent, 'base64url')).toEqual(Buffer.from(parts[2]!, 'base64url'));
+    expect(() => service.verify(`${parts[0]}.${parts[1]}.${equivalent}`)).toThrow('invalid or has been modified');
   });
 
   it('rejects an expired token', () => {

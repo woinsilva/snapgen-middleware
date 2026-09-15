@@ -27,6 +27,7 @@ export interface VideoOperation {
 export interface VideoProvider {
   generateVideo(input: VideoGenerateInput, requestId: string): Promise<VideoGeneration>;
   getVideo(uuid: string, requestId: string): Promise<VideoGenerationStatus>;
+  getVideoOnce?(uuid: string, requestId: string): Promise<VideoGenerationStatus>;
   extendVideo(input: VideoExtendInput, requestId: string): Promise<VideoOperation>;
   createStoryboard(input: StoryboardInput, requestId: string): Promise<VideoOperation>;
 }

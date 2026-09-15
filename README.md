@@ -177,7 +177,7 @@ O `.env` real é ignorado pelo Git e pelo contexto Docker. Nunca configure `SNAP
 
 ## Projetos de vídeo stateless (V3)
 
-A V3 adiciona `/video/projects/start`, `/video/projects/continue`, render assíncrono via `/video/projects/render`, status JSON em `/video/projects/{projectId}/render/{renderJobId}` e uma rota temporária de download. Ela usa um Project State Token assinado, sem banco ou worker externo. O cliente deve preservar somente o token mais recente. Jobs e arquivos de render são efêmeros e podem ser perdidos em restart/deploy. Consulte [docs/stateless-v3.md](docs/stateless-v3.md) para fluxo, risco de replay, budget guard, segurança de mídia e limites da entrega efêmera.
+A V3 usa `/video/projects/start`, o comando potencialmente pago `/video/projects/advance`, a consulta gratuita `/video/projects/status`, render assíncrono via `/video/projects/render`, status JSON em `/video/projects/{projectId}/render/{renderJobId}` e download temporário. `/video/projects/continue` permanece somente para compatibilidade. O cliente deve preservar exatamente o token mais recente. Jobs e arquivos são efêmeros e podem ser perdidos em restart/deploy. Consulte [docs/stateless-v3.md](docs/stateless-v3.md) para fluxo, replay, budget guard e segurança.
 
 ## Render
 

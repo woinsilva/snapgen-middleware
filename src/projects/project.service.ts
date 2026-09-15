@@ -77,37 +77,22 @@ export class StatelessProjectService {
   }
 
   async continue(projectState: string, requestId: string): Promise<ProjectResponse> {
+    const state = this.tokens.verify(projectState);
+    return state.scenes.some((scene) => scene.status === 'processing')
+      ? this.synchronizeStatus(projectState, requestId, this.provider.getVideo.bind(this.provider))
+      : this.advance(projectState, requestId);
+  }
+
+  async advance(projectState: string, requestId: string): Promise<ProjectResponse> {
     const state = structuredClone(this.tokens.verify(projectState));
     if (state.status === 'completed' || state.status === 'failed') return this.response(state, projectState);
     if (state.status === 'assembling') return this.response(state, projectState);
+    if (state.scenes.some((scene) => scene.status === 'processing')) {
+      throw new ApiError(409, 'PROJECT_STATUS_REQUIRED', 'A scene is processing. Use the project status endpoint before advancing.');
+    }
     if (state.status === 'planning') {
       assertProjectTransition('planning', 'generating');
       state.status = 'generating';
-    }
-
-    const active = state.scenes.find((scene) => scene.status === 'processing');
-    if (active) {
-      const result = await this.provider.getVideo(active.snapgenUuid!, requestId);
-      if (result.status === 'processing') return this.updatedResponse(state);
-      if (result.status === 'failed') {
-        assertSceneTransition('processing', 'failed');
-        active.status = 'failed';
-        active.errorCode = 'PROVIDER_GENERATION_FAILED';
-        active.errorMessage = result.error ?? 'Video generation failed';
-        assertProjectTransition(state.status, 'failed');
-        state.status = 'failed';
-        state.errorCode = active.errorCode;
-        state.errorMessage = active.errorMessage;
-        return this.updatedResponse(state);
-      }
-      assertSceneTransition('processing', 'completed');
-      active.status = 'completed';
-      const completed = state.scenes.filter((scene) => scene.status === 'completed').length;
-      if (completed === state.scenes.length) {
-        assertProjectTransition(state.status, 'assembling');
-        state.status = 'assembling';
-      }
-      return this.updatedResponse(state);
     }
 
     const unsafe = state.scenes.find((scene) => ['submitting', 'ambiguous'].includes(scene.status));
@@ -174,6 +159,39 @@ export class StatelessProjectService {
       state.errorMessage = pending.errorMessage;
       return this.updatedResponse(state);
     }
+  }
+
+  async status(projectState: string, requestId: string): Promise<ProjectResponse> {
+    const lookup = this.provider.getVideoOnce?.bind(this.provider) ?? this.provider.getVideo.bind(this.provider);
+    return this.synchronizeStatus(projectState, requestId, lookup);
+  }
+
+  private async synchronizeStatus(projectState: string, requestId: string, lookup: VideoProvider['getVideo']): Promise<ProjectResponse> {
+    const state = structuredClone(this.tokens.verify(projectState));
+    const active = state.scenes.find((scene) => scene.status === 'processing');
+    if (!active) return this.response(state, projectState);
+
+    const result = await lookup(active.snapgenUuid!, requestId);
+    if (result.status === 'processing') return this.updatedResponse(state);
+    if (result.status === 'failed') {
+      assertSceneTransition('processing', 'failed');
+      active.status = 'failed';
+      active.errorCode = 'PROVIDER_GENERATION_FAILED';
+      active.errorMessage = result.error ?? 'Video generation failed';
+      assertProjectTransition(state.status, 'failed');
+      state.status = 'failed';
+      state.errorCode = active.errorCode;
+      state.errorMessage = active.errorMessage;
+      return this.updatedResponse(state);
+    }
+    assertSceneTransition('processing', 'completed');
+    active.status = 'completed';
+    const completed = state.scenes.filter((scene) => scene.status === 'completed').length;
+    if (completed === state.scenes.length) {
+      assertProjectTransition(state.status, 'assembling');
+      state.status = 'assembling';
+    }
+    return this.updatedResponse(state);
   }
 
   async render(projectState: string, requestId: string): Promise<ProjectResponse> {

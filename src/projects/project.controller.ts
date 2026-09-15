@@ -6,7 +6,7 @@ import type { EphemeralOutputStore } from './project-output-store.js';
 import type { RenderJobManager } from './render-job.manager.js';
 
 export function createProjectController(service?: StatelessProjectService, outputStore?: EphemeralOutputStore, renderJobs?: RenderJobManager): {
-  start: RequestHandler; continue: RequestHandler; render: RequestHandler; renderStatus: RequestHandler; output: RequestHandler;
+  start: RequestHandler; advance: RequestHandler; status: RequestHandler; continue: RequestHandler; render: RequestHandler; renderStatus: RequestHandler; output: RequestHandler;
 } {
   const requiredService = () => {
     if (!service) throw new ApiError(503, 'V3_NOT_CONFIGURED', 'Stateless V3 requires PROJECT_STATE_SECRET.');
@@ -26,6 +26,18 @@ export function createProjectController(service?: StatelessProjectService, outpu
     continue: async (request, response) => {
       const input = projectStateRequestSchema.parse(request.body);
       const result = await requiredService().continue(input.projectState, response.locals.requestId);
+      response.locals.projectId = result.projectId;
+      response.json(result);
+    },
+    advance: async (request, response) => {
+      const input = projectStateRequestSchema.parse(request.body);
+      const result = await requiredService().advance(input.projectState, response.locals.requestId);
+      response.locals.projectId = result.projectId;
+      response.json(result);
+    },
+    status: async (request, response) => {
+      const input = projectStateRequestSchema.parse(request.body);
+      const result = await requiredService().status(input.projectState, response.locals.requestId);
       response.locals.projectId = result.projectId;
       response.json(result);
     },

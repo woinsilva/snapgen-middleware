@@ -5,7 +5,7 @@ ESCOPO
 - Runtime adaptado para render assíncrono compatível com o timeout de GPT Actions.
 - Download MP4 removido do contrato das Actions e exposto por URL temporária assinada, diretamente utilizável no navegador.
 - Actions V1/V2 preservadas.
-- Custom GPT publicado, Render e secrets não foram alterados durante esta preparação.
+- O Custom GPT atualmente publicado, o Render e os secrets não foram alterados durante esta preparação local.
 
 CONTRATO ALTERADO
 
@@ -14,6 +14,9 @@ Anterior:
 - GET /video/projects/output/{projectId} exigia x-api-key.
 
 Novo:
+- POST /video/projects/advance é o único comando V3 que pode iniciar uma nova cena; inicia no máximo uma e rejeita avanço durante processing.
+- POST /video/projects/status é uma consulta não consequential; faz no máximo um GET sem retry, nunca inicia cena e nunca emite POST pago.
+- POST /video/projects/continue permanece no runtime somente como compatibilidade e foi removido do contrato do Custom GPT.
 - POST /video/projects/render valida o state, agenda o trabalho efêmero e retorna HTTP 202 com projectId, renderJobId e status processing.
 - GET /video/projects/{projectId}/render/{renderJobId} retorna JSON com processing, completed ou failed.
 - Quando completed, o status inclui o novo projectState e uma downloadUrl absoluta temporária.
@@ -33,6 +36,7 @@ SEGURANÇA
 - Todas as Actions normais continuam protegidas por x-api-key.
 - Somente o endpoint binário de download é público por token assinado.
 - Token alterado, expirado ou associado a outro projeto é rejeitado.
+- Project State e acesso de download exigem Base64URL canônico; representações alternativas são rejeitadas.
 - O handle do arquivo é UUID gerado pelo servidor e resolvido somente dentro do diretório de outputs.
 - Caminhos internos e secrets não aparecem nas respostas.
 - Cache-Control private, no-store e Referrer-Policy no-referrer são enviados no download.
@@ -40,7 +44,7 @@ SEGURANÇA
 ARTEFATOS DO CUSTOM GPT
 
 - OPENAPI-FINAL.yaml: contrato V1/V2/V3 com somente Actions textuais/JSON.
-- INSTRUCTIONS-FINAL.txt: workflow V3 Stateless como fluxo principal, compatibilidade V1/V2 secundária, Project State, orçamento, render assíncrono e output temporário.
+- INSTRUCTIONS-FINAL.txt: workflow V3 Stateless com comando pago `advanceVideoProject`, consulta gratuita `getVideoProjectStatus`, compatibilidade V1/V2 secundária, render assíncrono e output temporário.
 - GPT-BUILDER-CHECKLIST.txt: atualização manual e validação no Builder.
 - GPT-PREVIEW-TESTS.txt: testes gratuitos e testes pagos futuros separados.
 - HTTP-FLOW-EXAMPLE.md: fluxo HTTP completo com placeholders seguros.
@@ -53,15 +57,16 @@ ACTIONS
 - extendVideo
 - generateStoryboard
 - startVideoProject
-- continueVideoProject
+- advanceVideoProject
+- getVideoProjectStatus
 - renderVideoProject
 - getVideoProjectRenderStatus
 - getVideoGenerationStatus
 
 CONSEQUENTIAL
 
-- true: generateVideo, extendVideo, generateStoryboard, continueVideoProject.
-- false: startVideoProject, renderVideoProject e todos os GETs.
+- true: generateVideo, extendVideo, generateStoryboard, advanceVideoProject.
+- false: startVideoProject, getVideoProjectStatus, renderVideoProject e todos os GETs.
 - Marcação feita com x-openai-isConsequential.
 
 VARIÁVEIS
@@ -77,11 +82,13 @@ VALIDAÇÃO
 - typecheck: aprovado.
 - lint: aprovado.
 - build: aprovado.
-- testes: 87 aprovados, 1 teste de mídia ignorado, 88 total.
+- testes: 99 aprovados, 1 teste de mídia ignorado, 100 total.
+- command/query V3: advance inicia no máximo uma cena; status nunca gera, consulta no máximo uma vez e não inicia a próxima cena.
+- lifecycle de token: sequência real de duas cenas, JSON round-trip, token mais recente, state legado schema 2 e adulteração cobertos.
 - testes V3 assíncronos: resposta 202, processing, completed, failed, autenticação do status e URL absoluta cobertos.
 - download: acesso público assinado, adulteração, expiração, projeto incorreto, output ausente e headers seguros cobertos.
 - OpenAPI principal e OpenAPI do GPT: válidos no Redocly, sem erros; somente avisos editoriais não bloqueantes de licença/4xx público.
-- operationIds: 10 e únicos no artefato do GPT.
+- operationIds: 11 e únicos no artefato do GPT.
 - endpoint video/mp4: ausente do artefato do GPT.
 - valores 16:9, 720p e 1080p tratados como strings.
 - nenhuma chamada SnapGen real e nenhuma operação paga executada.

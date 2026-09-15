@@ -148,6 +148,14 @@ describe('V2 model registry and workflows', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('offers a single-attempt status lookup for the V3 read-only status action', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => response({ detail: { error_code: 'SYSTEM_ERROR' } }, 503));
+    const service = new SnapGenService(env, fetchMock);
+
+    await expect(service.getVideoOnce(uuid, 'v3-status')).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('maps documented Grok policy status -2 to failed', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => response({ uuid, status: -2, error_message: 'Policy violation' }));
     const result = await request(appWithFetch(fetchMock)).get(`/video/${uuid}`).set('x-api-key', env.MIDDLEWARE_API_KEY);

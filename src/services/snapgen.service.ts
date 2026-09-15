@@ -94,7 +94,18 @@ export class SnapGenService implements VideoProvider {
   }
 
   async getVideo(uuid: string, requestId: string): Promise<VideoGenerationStatus> {
-    const raw = asRecord(await this.getWithRetry(`/uapi/v1/history/${encodeURIComponent(uuid)}`, requestId));
+    return this.getVideoStatus(uuid, requestId, true);
+  }
+
+  async getVideoOnce(uuid: string, requestId: string): Promise<VideoGenerationStatus> {
+    return this.getVideoStatus(uuid, requestId, false);
+  }
+
+  private async getVideoStatus(uuid: string, requestId: string, retry: boolean): Promise<VideoGenerationStatus> {
+    const path = `/uapi/v1/history/${encodeURIComponent(uuid)}`;
+    const raw = asRecord(retry
+      ? await this.getWithRetry(path, requestId)
+      : await this.request(path, { method: 'GET' }, requestId, 'getVideoStatus', { provider: 'snapgen', attempt: 1 }));
     const responseUuid = requiredString(raw.uuid, 'uuid');
     const status = snapGenStatus(raw.status);
     const generatedVideo = Array.isArray(raw.generated_video) ? asRecord(raw.generated_video[0]) : {};

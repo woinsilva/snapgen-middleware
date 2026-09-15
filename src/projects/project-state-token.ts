@@ -14,6 +14,12 @@ function outputSignature(secret: string, encodedPayload: string): Buffer {
   return createHmac('sha256', secret).update(`pso1.${encodedPayload}`).digest();
 }
 
+function decodeCanonicalBase64Url(value: string): Buffer | undefined {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) return undefined;
+  const decoded = Buffer.from(value, 'base64url');
+  return decoded.toString('base64url') === value ? decoded : undefined;
+}
+
 export class ProjectStateTokenService {
   constructor(
     private readonly currentSecret: string,
@@ -37,8 +43,9 @@ export class ProjectStateTokenService {
     if (Buffer.byteLength(token, 'utf8') > this.maxTokenBytes) throw new ApiError(413, 'PROJECT_STATE_TOO_LARGE', 'Project State Token is too large.');
     const parts = token.split('.');
     if (parts.length !== 3 || parts[0] !== TOKEN_PREFIX || !parts[1] || !parts[2]) return this.invalid();
-    let supplied: Buffer;
-    try { supplied = Buffer.from(parts[2], 'base64url'); } catch { return this.invalid(); }
+    const payload = decodeCanonicalBase64Url(parts[1]);
+    const supplied = decodeCanonicalBase64Url(parts[2]);
+    if (!payload || !supplied) return this.invalid();
     const valid = [this.currentSecret, this.previousSecret]
       .filter((secret): secret is string => Boolean(secret))
       .some((secret) => {
@@ -47,7 +54,7 @@ export class ProjectStateTokenService {
       });
     if (!valid) return this.invalid();
     try {
-      const json = inflateRawSync(Buffer.from(parts[1], 'base64url'), { maxOutputLength: 524_288 }).toString('utf8');
+      const json = inflateRawSync(payload, { maxOutputLength: 524_288 }).toString('utf8');
       const state = projectStateSchema.parse(JSON.parse(json) as unknown);
       if (new Date(state.expiresAt).getTime() <= this.now().getTime()) throw new ApiError(400, 'PROJECT_STATE_EXPIRED', 'Project State Token has expired.');
       return state;
@@ -65,15 +72,16 @@ export class ProjectStateTokenService {
   verifyOutputAccess(token: string, expectedProjectId: string): ProjectOutputState {
     const parts = token.split('.');
     if (parts.length !== 3 || parts[0] !== 'pso1' || !parts[1] || !parts[2]) return this.invalid();
-    let supplied: Buffer;
-    try { supplied = Buffer.from(parts[2], 'base64url'); } catch { return this.invalid(); }
+    const payload = decodeCanonicalBase64Url(parts[1]);
+    const supplied = decodeCanonicalBase64Url(parts[2]);
+    if (!payload || !supplied) return this.invalid();
     const valid = [this.currentSecret, this.previousSecret].filter((value): value is string => Boolean(value)).some((secret) => {
       const expected = outputSignature(secret, parts[1]!);
       return supplied.length === expected.length && timingSafeEqual(supplied, expected);
     });
     if (!valid) return this.invalid();
     try {
-      const value = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, unknown>;
+      const value = JSON.parse(payload.toString('utf8')) as Record<string, unknown>;
       if (value.projectId !== expectedProjectId || typeof value.handle !== 'string' || typeof value.expiresAt !== 'string') return this.invalid();
       if (new Date(value.expiresAt).getTime() <= this.now().getTime()) throw new ApiError(410, 'PROJECT_OUTPUT_EXPIRED', 'The ephemeral project output has expired.');
       return { handle: value.handle, expiresAt: value.expiresAt };
