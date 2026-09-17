@@ -32,7 +32,12 @@ IMPLEMENTAÇÃO
 - O processamento pesado inicia fora do lifecycle da requisição que retornou 202.
 - Jobs são deduplicados por projectId enquanto permanecem no Map.
 - Falhas inesperadas são reduzidas a PROJECT_RENDER_FAILED sem detalhes internos.
-- Job metadata expira por TTL; output também possui TTL e cleanup próprios.
+- PROJECT_RENDER_JOB_TTL_SECONDS conta somente após completed/failed; nunca remove job processing.
+- PROJECT_RENDER_MAX_EXECUTION_SECONDS limita separadamente a execução (default 43200s); timeout produz RENDER_EXECUTION_TIMEOUT observável e aborta trabalho controlado.
+- A retenção terminal deve cobrir PROJECT_OUTPUT_TTL_SECONDS + 300s. Output expirado muda o status para failed/OUTPUT_EXPIRED e remove a URL morta.
+- Jobs, timers, arquivos e outputs continuam efêmeros e locais à instância. Restart/deploy/substituição ainda pode perdê-los; operação restart-safe exige job/object storage duráveis.
+- SIGTERM bloqueia novos jobs, marca trabalhos ativos como interrompidos, tenta abortar subprocessos controlados e encerra com grace period limitado a 10s.
+- Logs estruturados incluem process instance ID, commit/service IDs seguros quando disponíveis, IDs de projeto/job, estágio, tempo, cleanup e códigos de erro; não incluem state, secrets, URLs de mídia, tokens, prompts ou paths.
 - RENDER_EXTERNAL_URL, fornecida automaticamente pelo Render, forma a URL pública. PUBLIC_BASE_URL é um override opcional para outros ambientes.
 
 SEGURANÇA
@@ -76,17 +81,20 @@ CONSEQUENTIAL
 VARIÁVEIS
 
 - PROJECT_RENDER_JOB_TTL_SECONDS: opcional, default 3600.
+- PROJECT_RENDER_MAX_EXECUTION_SECONDS: opcional, default 43200.
+- PROJECT_OUTPUT_TTL_SECONDS: opcional, default 900; a retenção do render deve ser pelo menos output + 300s.
 - PROJECT_GENERATION_JOB_TTL_SECONDS: opcional, default 14400.
 - PUBLIC_BASE_URL: opcional; override da URL pública fora do Render.
 - RENDER_EXTERNAL_URL: fornecida automaticamente pelo Render.
-- Nenhum novo secret foi introduzido.
+- Nenhum novo secret foi introduzido. O process instance ID e identificadores seguros do Render aparecem somente em logs estruturados.
 
 VALIDAÇÃO
 
 - typecheck: aprovado.
 - lint: aprovado.
 - build: aprovado.
-- testes: 107 aprovados, 1 teste de mídia ignorado, 108 total.
+- testes: 115 aprovados, 1 teste de mídia ignorado, 116 total.
+- lifecycle de render: processing imune à retenção terminal, timeout/abort, late completion, expiração de output, cleanup, shutdown e perda após troca de processo cobertos com timers falsos.
 - generation job V3.1: uma instância por projeto/plano, cenas sequenciais, um POST máximo por cena, polling limitado e nenhuma repetição ambígua.
 - lifecycle de token: sequência real de duas cenas, JSON round-trip, token mais recente, state legado schema 2 e adulteração cobertos.
 - testes V3 assíncronos: resposta 202, processing, completed, failed, autenticação do status e URL absoluta cobertos.

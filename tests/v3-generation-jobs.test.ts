@@ -159,4 +159,25 @@ describe('V3.1 asynchronous whole-project generation jobs', () => {
     expect(result.status).toBe('assembling');
     expect(result).not.toHaveProperty('renderJobId');
   });
+
+  it('emits safe lifecycle logs and fails processing work observably on shutdown', async () => {
+    const records: Record<string, unknown>[] = [];
+    const mock = provider();
+    const { service } = serviceWith(mock);
+    const manager = new GenerationJobManager(service, {
+      sleep: () => new Promise(() => undefined),
+      logger: { info: (record) => records.push(record), error: (record) => records.push(record) },
+    });
+    const project = service.start(projectInput());
+    const started = manager.start(project.projectState, 'shutdown-observability');
+    expect(manager.beginShutdown()).toEqual({ active: 1, total: 1 });
+    expect(manager.get(started.projectId, started.generationJobId)).toMatchObject({ status: 'failed', error: { code: 'GENERATION_JOB_INTERRUPTED' } });
+    expect(records).toEqual(expect.arrayContaining([
+      expect.objectContaining({ event: 'generation_job_created', generationJobId: started.generationJobId }),
+      expect.objectContaining({ event: 'generation_scene_reserved', sceneSequence: 1 }),
+      expect.objectContaining({ event: 'generation_job_interrupted', errorCode: 'GENERATION_JOB_INTERRUPTED' }),
+      expect.objectContaining({ event: 'generation_job_failed', errorCode: 'GENERATION_JOB_INTERRUPTED' }),
+    ]));
+    expect(JSON.stringify(records)).not.toContain(project.projectState);
+  });
 });

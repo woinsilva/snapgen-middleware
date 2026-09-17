@@ -7,7 +7,8 @@ import type { ProjectStateTokenService } from './project-state-token.js';
 import { projectModelProfileRegistry } from './project-model-profile.registry.js';
 
 export interface RenderResult { handle: string; expiresAt: string }
-export interface ProjectRenderer { render(state: ValidatedProjectState, requestId: string): Promise<RenderResult> }
+export interface ProjectRenderOptions { signal?: AbortSignal; renderJobId?: string }
+export interface ProjectRenderer { render(state: ValidatedProjectState, requestId: string, options?: ProjectRenderOptions): Promise<RenderResult> }
 
 export interface ProjectResponse {
   projectId: string;
@@ -212,12 +213,12 @@ export class StatelessProjectService {
     return this.updatedResponse(state);
   }
 
-  async render(projectState: string, requestId: string): Promise<ProjectResponse> {
+  async render(projectState: string, requestId: string, options?: ProjectRenderOptions): Promise<ProjectResponse> {
     const state = structuredClone(this.tokens.verify(projectState));
     if (state.status === 'completed') return this.response(state, projectState);
     this.assertRenderableState(state);
     if (!this.renderer) throw new ApiError(503, 'PROJECT_RENDERING_UNAVAILABLE', 'Project rendering is not configured.');
-    const output = await this.renderer.render(state, requestId);
+    const output = await this.renderer.render(state, requestId, options);
     assertProjectTransition('assembling', 'completed');
     state.status = 'completed';
     state.output = output;

@@ -111,3 +111,5 @@ Se continuar `processing`, o GPT informa isso e aguarda nova interação antes d
 ```
 
 O navegador acessa `downloadUrl` diretamente. Esse GET não exige `x-api-key`; o token assinado da própria URL autoriza somente o projeto/output até sua expiração.
+
+`RENDER_EXECUTION_TIMEOUT` significa que a execução excedeu o limite e foi interrompida; não abra outro render automaticamente. `OUTPUT_EXPIRED` significa que a metadata terminal ainda existe, mas o arquivo temporário não é mais utilizável; `downloadUrl` será nulo. Restart/deploy/troca de instância ainda podem produzir `RENDER_JOB_NOT_FOUND` porque jobs e outputs permanecem efêmeros.

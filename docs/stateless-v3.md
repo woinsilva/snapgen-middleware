@@ -77,10 +77,14 @@ The final file lives in the container temporary filesystem. The response include
 - expiry or cleanup makes it unavailable;
 - the client should download immediately.
 
-Render job metadata is also an in-memory, per-instance map with a bounded TTL. A restart or deploy removes job metadata and temporary files; a status lookup then returns `RENDER_JOB_NOT_FOUND`. A multi-instance deployment would require shared job and object storage, deliberately outside this version. Reliable retention is impossible on ephemeral Render storage without external storage.
+Render job metadata is also an in-memory, per-instance map. Terminal retention begins only after `completed` or `failed`; it never deletes a processing job. `PROJECT_RENDER_JOB_TTL_SECONDS` defaults to 3,600 seconds and means terminal metadata retention, not execution timeout. `PROJECT_RENDER_MAX_EXECUTION_SECONDS` separately limits active execution and defaults to 43,200 seconds. Timeout aborts controlled download/FFmpeg work, produces observable `failed` with `RENDER_EXECUTION_TIMEOUT`, and late completion cannot overwrite it.
+
+`PROJECT_RENDER_JOB_TTL_SECONDS` must be at least `PROJECT_OUTPUT_TTL_SECONDS + 300`, so completed metadata covers the output lifetime plus a diagnostic grace period. If output expires while metadata remains, status becomes `failed` with `OUTPUT_EXPIRED` and no download URL. It is never represented as usable and is never regenerated automatically.
+
+A restart or deploy still removes job metadata and temporary files; a status lookup then returns `RENDER_JOB_NOT_FOUND`. A multi-instance deployment requires shared job and object storage, deliberately outside this version. Reliable restart-safe retention is impossible on ephemeral Render storage without external storage.
 
 The public download URL contains a short-lived HMAC-signed access token bound to the project ID, output handle, and expiry. The endpoint validates the signature and expiry, resolves only server-generated UUID handles inside the output directory, and does not expose filesystem paths or API keys. All other video and project endpoints continue to require `x-api-key`.
 
-The external URL is built from `PUBLIC_BASE_URL` when explicitly configured, otherwise from Render's automatic `RENDER_EXTERNAL_URL`, and finally from the local server URL during development. `PROJECT_RENDER_JOB_TTL_SECONDS` controls how long job metadata is retained and defaults to 3,600 seconds.
+The external URL is built from `PUBLIC_BASE_URL` when explicitly configured, otherwise from Render's automatic `RENDER_EXTERNAL_URL`, and finally from the local server URL during development.
 
 Generation job metadata is also per-instance and ephemeral. `PROJECT_GENERATION_JOB_TTL_SECONDS` bounds a job to 14,400 seconds by default. Expiry stops future polling/submission and exposes a non-retryable failed job. Multiple instances require sticky routing plus shared durable job/idempotency state; without that, production should remain single-instance for this workflow.

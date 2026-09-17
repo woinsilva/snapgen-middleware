@@ -40,6 +40,7 @@ export function createApp(
   const logger = createLogger(env.LOG_LEVEL);
   const provider = service ?? new SnapGenService(env, fetch, logger);
   const outputStore = suppliedOutputStore ?? new EphemeralOutputStore();
+  const outputTtlSeconds = env.PROJECT_OUTPUT_TTL_SECONDS ?? 900;
   const projectService = suppliedProjectService ?? (env.PROJECT_STATE_SECRET ? (() => {
     const tokens = new ProjectStateTokenService(
       env.PROJECT_STATE_SECRET,
@@ -58,16 +59,23 @@ export function createApp(
       downloader,
       new FfmpegMediaProcessor(),
       outputStore,
-      env.PROJECT_OUTPUT_TTL_SECONDS ?? 900,
+      outputTtlSeconds,
+      logger,
     );
     return new StatelessProjectService(tokens, provider, renderer, env.PROJECT_STATE_TOKEN_TTL_SECONDS ?? 2_592_000);
   })() : undefined);
   const publicBaseUrl = env.PUBLIC_BASE_URL ?? env.RENDER_EXTERNAL_URL ?? `http://localhost:${env.PORT}`;
   const renderJobs = projectService
-    ? new RenderJobManager(projectService, publicBaseUrl, env.PROJECT_RENDER_JOB_TTL_SECONDS ?? 3_600)
+    ? new RenderJobManager(
+      projectService,
+      publicBaseUrl,
+      env.PROJECT_RENDER_JOB_TTL_SECONDS ?? 3_600,
+      env.PROJECT_RENDER_MAX_EXECUTION_SECONDS ?? 43_200,
+      logger,
+    )
     : undefined;
   const generationJobs = projectService
-    ? new GenerationJobManager(projectService, { jobTtlSeconds: env.PROJECT_GENERATION_JOB_TTL_SECONDS ?? 14_400 })
+    ? new GenerationJobManager(projectService, { jobTtlSeconds: env.PROJECT_GENERATION_JOB_TTL_SECONDS ?? 14_400, logger })
     : undefined;
   const videoRateLimit = rateLimit({
     windowMs: env.RATE_LIMIT_WINDOW_MS,
@@ -91,6 +99,10 @@ export function createApp(
   app.use('/video/projects/output', videoRateLimit, createProjectOutputRouter(projectService, outputStore));
   app.use('/video/projects', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), createProjectRouter(projectService, renderJobs, generationJobs));
   app.use('/video', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), createVideoRouter(provider));
+  app.locals.jobLifecycle = {
+    beginShutdown: () => ({ generation: generationJobs?.beginShutdown() ?? { active: 0, total: 0 }, render: renderJobs?.beginShutdown() ?? { active: 0, total: 0 } }),
+    counts: () => ({ generation: generationJobs?.activeJobCount() ?? 0, render: renderJobs?.activeJobCount() ?? 0 }),
+  };
   app.use(notFoundHandler);
   app.use(createErrorHandler(env));
   return app;

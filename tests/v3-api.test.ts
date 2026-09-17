@@ -53,6 +53,10 @@ describe('V3 stateless project API', () => {
     expect(() => loadEnv({ ...base, PROJECT_STATE_SECRET: 'short' })).toThrow('PROJECT_STATE_SECRET');
     expect(() => loadEnv({ ...base, PROJECT_STATE_SECRET: base.MIDDLEWARE_API_KEY })).toThrow('must not reuse');
     expect(loadEnv({ ...base, PROJECT_STATE_SECRET: tokenSecret }).PROJECT_STATE_SECRET).toBe(tokenSecret);
+    expect(() => loadEnv({ ...base, PROJECT_STATE_SECRET: tokenSecret, PROJECT_OUTPUT_TTL_SECONDS: '4000', PROJECT_RENDER_JOB_TTL_SECONDS: '3600' }))
+      .toThrow('must be at least PROJECT_OUTPUT_TTL_SECONDS + 300');
+    expect(loadEnv({ ...base, PROJECT_STATE_SECRET: tokenSecret, PROJECT_OUTPUT_TTL_SECONDS: '900', PROJECT_RENDER_JOB_TTL_SECONDS: '1200', PROJECT_RENDER_MAX_EXECUTION_SECONDS: '43200' }))
+      .toMatchObject({ PROJECT_RENDER_JOB_TTL_SECONDS: 1200, PROJECT_RENDER_MAX_EXECUTION_SECONDS: 43200 });
   });
 
   it('rejects invalid model and invalid scene count', async () => {

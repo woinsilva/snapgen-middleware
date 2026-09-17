@@ -13,7 +13,7 @@ const env: AppEnv = {
   PUBLIC_BASE_URL: 'https://video.example.test',
 };
 const uuid = '550e8400-e29b-41d4-a716-446655440000';
-const output: RenderResult = { handle: '7d9f6f50-18a1-4ff0-bd1f-5a83639928ad', expiresAt: '2026-09-14T12:15:00.000Z' };
+const output: RenderResult = { handle: '7d9f6f50-18a1-4ff0-bd1f-5a83639928ad', expiresAt: '2099-09-14T12:15:00.000Z' };
 const provider = {
   generateVideo: vi.fn(), getVideo: vi.fn(), extendVideo: vi.fn(), createStoryboard: vi.fn(),
 } as VideoProvider;

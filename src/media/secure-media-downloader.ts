@@ -40,15 +40,17 @@ export class SecureMediaDownloader {
     this.lookupImplementation = options.lookupImplementation ?? lookup;
   }
 
-  async download(source: string, destination: string): Promise<number> {
+  async download(source: string, destination: string, signal?: AbortSignal): Promise<number> {
     let current = new URL(source);
     const redirects = this.options.maxRedirects ?? 2;
     for (let count = 0; count <= redirects; count += 1) {
       await this.validateUrl(current);
+      signal?.throwIfAborted();
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.options.timeoutMs);
+      const combinedSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
       try {
-        const response = await this.fetchImplementation(current, { redirect: 'manual', signal: controller.signal });
+        const response = await this.fetchImplementation(current, { redirect: 'manual', signal: combinedSignal });
         if (response.status >= 300 && response.status < 400) {
           const location = response.headers.get('location');
           if (!location || count === redirects) throw new ApiError(502, 'MEDIA_REDIRECT_REJECTED', 'Media download exceeded the redirect limit.');

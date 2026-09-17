@@ -167,7 +167,9 @@ RATE_LIMIT_MAX=30
 NODE_ENV=development
 LOG_LEVEL=info
 PROJECT_STATE_SECRET=
+PROJECT_OUTPUT_TTL_SECONDS=900
 PROJECT_RENDER_JOB_TTL_SECONDS=3600
+PROJECT_RENDER_MAX_EXECUTION_SECONDS=43200
 PROJECT_GENERATION_JOB_TTL_SECONDS=14400
 PUBLIC_BASE_URL=
 ```
@@ -179,6 +181,8 @@ O `.env` real é ignorado pelo Git e pelo contexto Docker. Nunca configure `SNAP
 ## Projetos de vídeo stateless (V3)
 
 A V3.1 usa `/video/projects/start`, um único comando potencialmente pago `/video/projects/generation`, consulta gratuita em `/video/projects/{projectId}/generation/{generationJobId}`, render assíncrono e download temporário. O worker gera as cenas estritamente em sequência e para em `assembling`; render nunca começa automaticamente. `/advance`, `/status` e `/continue` permanecem no runtime somente para compatibilidade/diagnóstico e não aparecem no contrato do Custom GPT. O cliente deve preservar exatamente o token mais recente. Jobs e arquivos são efêmeros e podem ser perdidos em restart/deploy. Consulte [docs/stateless-v3.md](docs/stateless-v3.md) para fluxo, replay, budget guard e segurança.
+
+`PROJECT_RENDER_JOB_TTL_SECONDS` retém somente metadata terminal após `completed`/`failed`; nunca remove um job `processing`. `PROJECT_RENDER_MAX_EXECUTION_SECONDS` limita separadamente a execução ativa e usa default de 43.200 segundos, suficiente para o pipeline sequencial máximo sob os timeouts atuais. Ao excedê-lo, o job vira `failed` com `RENDER_EXECUTION_TIMEOUT`, permanece consultável e o middleware tenta abortar downloads/FFmpeg controlados. A retenção de metadata deve ser pelo menos `PROJECT_OUTPUT_TTL_SECONDS + 300` segundos; configuração incompatível impede o startup.
 
 ## Render
 

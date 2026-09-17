@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ApiError } from '../errors.js';
+import { processIdentity } from '../runtime/process-identity.js';
+import type { Logger } from '../utils/logger.js';
 import type { ValidatedProjectState } from './project.schemas.js';
 import type { ProjectResponse, StatelessProjectService } from './project.service.js';
 
@@ -32,9 +34,11 @@ export interface GenerationJobManagerOptions {
   maxPollsPerScene?: number;
   sleep?: (milliseconds: number) => Promise<void>;
   now?: () => number;
+  logger?: Logger;
 }
 
 const defaultSleep = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+const silentLogger: Logger = { info: () => undefined, error: () => undefined };
 
 function fingerprint(state: ValidatedProjectState): string {
   const plan = {
@@ -64,6 +68,8 @@ export class GenerationJobManager {
   private readonly maxPollsPerScene: number;
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly now: () => number;
+  private readonly logger: Logger;
+  private accepting = true;
 
   constructor(private readonly projects: StatelessProjectService, options: GenerationJobManagerOptions = {}) {
     this.jobTtlSeconds = options.jobTtlSeconds ?? 14_400;
@@ -72,9 +78,11 @@ export class GenerationJobManager {
     this.maxPollsPerScene = options.maxPollsPerScene ?? 120;
     this.sleep = options.sleep ?? defaultSleep;
     this.now = options.now ?? Date.now;
+    this.logger = options.logger ?? silentLogger;
   }
 
   start(projectState: string, requestId: string): GenerationJobResponse {
+    if (!this.accepting) throw new ApiError(503, 'SERVICE_SHUTTING_DOWN', 'New generation jobs are not accepted during shutdown.');
     const initial = this.projects.verify(projectState);
     const existing = this.activeFor(initial.projectId);
     if (existing) {
@@ -113,6 +121,8 @@ export class GenerationJobManager {
     };
     this.jobs.set(this.key(job.projectId, job.generationJobId), job);
     this.projectJobs.set(job.projectId, job.generationJobId);
+    this.log('generation_job_created', job, { activeJobCount: this.activeJobCount(), maxPaidOperations: job.maxPaidOperations });
+    this.log('generation_scene_reserved', job, { sceneSequence: job.currentSceneSequence });
     setImmediate(() => { void this.run(job, requestId); });
     return this.response(job);
   }
@@ -130,6 +140,19 @@ export class GenerationJobManager {
     }
   }
 
+  activeJobCount(): number { return [...this.jobs.values()].filter((job) => job.status === 'processing').length; }
+
+  beginShutdown(): { active: number; total: number } {
+    this.accepting = false;
+    const active = this.activeJobCount();
+    for (const job of this.jobs.values()) {
+      if (job.status !== 'processing') continue;
+      this.log('generation_job_interrupted', job, { activeJobCount: active, errorCode: 'GENERATION_JOB_INTERRUPTED' });
+      this.fail(job, 'GENERATION_JOB_INTERRUPTED', 'Generation job was interrupted by process shutdown.');
+    }
+    return { active, total: this.jobs.size };
+  }
+
   private async run(job: GenerationJob, requestId: string): Promise<void> {
     try {
       while (job.status === 'processing') {
@@ -141,6 +164,8 @@ export class GenerationJobManager {
         const submitted = await this.projects.submitReservedScene(job.projectState, `${requestId}:scene-${reserved.sequence}:submit`);
         this.update(job, submitted);
         if (submitted.status === 'failed') return this.failFromProject(job, submitted);
+        this.log('generation_provider_submitted', job, { sceneSequence: reserved.sequence, providerUuid: job.providerUuid });
+        this.log('generation_scene_processing', job, { sceneSequence: reserved.sequence, providerUuid: job.providerUuid });
         if (this.isExpired(job)) return;
 
         let delay = this.pollInitialMs;
@@ -161,6 +186,7 @@ export class GenerationJobManager {
         const state = this.projects.verify(job.projectState);
         if (state.status === 'assembling') {
           job.status = 'assembling';
+          this.log('generation_job_completed', job, { elapsedMs: this.elapsed(job), activeJobCount: this.activeJobCount() });
           return;
         }
         const next = state.scenes.find((scene) => scene.status === 'pending');
@@ -168,6 +194,7 @@ export class GenerationJobManager {
           return this.fail(job, 'GENERATION_JOB_STATE_INVALID', 'The next scene is outside the authorized generation plan.');
         }
         this.update(job, this.projects.reserveNextScene(job.projectState));
+        this.log('generation_scene_reserved', job, { sceneSequence: job.currentSceneSequence });
       }
     } catch {
       if (job.status !== 'failed') {
@@ -208,8 +235,10 @@ export class GenerationJobManager {
   }
 
   private fail(job: GenerationJob, code: string, message: string): void {
+    if (job.status === 'failed') return;
     job.status = 'failed';
     job.error = { code, message };
+    this.log(code === 'GENERATION_JOB_EXPIRED' ? 'generation_job_expired' : 'generation_job_failed', job, { elapsedMs: this.elapsed(job), errorCode: code, activeJobCount: this.activeJobCount() });
   }
 
   private isExpired(job: GenerationJob): boolean {
@@ -251,6 +280,13 @@ export class GenerationJobManager {
     clearTimeout(job.expiryTimer);
     this.jobs.delete(key);
     if (this.projectJobs.get(projectId) === generationJobId) this.projectJobs.delete(projectId);
+    this.log('generation_job_cleaned', job, { cleanupReason: 'terminal_ttl_expired', activeJobCount: this.activeJobCount() });
+  }
+
+  private elapsed(job: GenerationJob): number { return Math.max(0, this.now() - (job.expiresAt - this.jobTtlSeconds * 1_000)); }
+
+  private log(event: string, job: GenerationJob, details: Record<string, unknown>): void {
+    this.logger.info({ event, ...processIdentity, projectId: job.projectId, generationJobId: job.generationJobId, status: job.status, ...details });
   }
 
   private key(projectId: string, generationJobId: string): string { return `${projectId}:${generationJobId}`; }

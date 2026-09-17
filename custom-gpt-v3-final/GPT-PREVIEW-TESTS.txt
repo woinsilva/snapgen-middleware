@@ -30,6 +30,10 @@ TESTE 7 — CAPABILITIES E COMPATIBILIDADE
 Prompt: “Quais modelos suportam image-to-video e Extend? Não gere.”
 Esperado: usar getVideoModels quando necessário, sem contar o total; não presumir suporte a projeto longo; manter V1/V2 apenas para vídeo curto, status simples, Extend e Storyboard.
 
+TESTE 8 — FALHAS TERMINAIS DE RENDER
+Simule separadamente `RENDER_EXECUTION_TIMEOUT`, `OUTPUT_EXPIRED` e `RENDER_JOB_NOT_FOUND`.
+Esperado: explicar a condição, parar e não iniciar novo render, geração ou tentativa de renovação automaticamente.
+
 FASE B — FLUXO CONTROLADO FUTURO COM CRÉDITOS; NÃO EXECUTAR NESTA ETAPA
 
 1. startVideoProject retorna planning, paidOperations=0 e nenhum POST SnapGen.

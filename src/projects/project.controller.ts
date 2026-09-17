@@ -52,6 +52,7 @@ export function createProjectController(service?: StatelessProjectService, outpu
       const input = projectStateRequestSchema.parse(request.body);
       const result = requiredGenerationJobs().start(input.projectState, response.locals.requestId);
       response.locals.projectId = result.projectId;
+      response.locals.generationJobId = result.generationJobId;
       response.status(202).json(result);
     },
     generationStatus: async (request, response) => {
@@ -59,12 +60,14 @@ export function createProjectController(service?: StatelessProjectService, outpu
       const generationJobId = projectIdSchema.parse(request.params.generationJobId);
       const result = requiredGenerationJobs().get(projectId, generationJobId);
       response.locals.projectId = result.projectId;
+      response.locals.generationJobId = result.generationJobId;
       response.json(result);
     },
     render: async (request, response) => {
       const input = projectStateRequestSchema.parse(request.body);
       const result = requiredRenderJobs().start(input.projectState, response.locals.requestId);
       response.locals.projectId = result.projectId;
+      response.locals.renderJobId = result.renderJobId;
       response.status(202).json(result);
     },
     renderStatus: async (request, response) => {
@@ -72,6 +75,7 @@ export function createProjectController(service?: StatelessProjectService, outpu
       const renderJobId = projectIdSchema.parse(request.params.renderJobId);
       const result = requiredRenderJobs().get(projectId, renderJobId);
       response.locals.projectId = result.projectId;
+      response.locals.renderJobId = result.renderJobId;
       response.json(result);
     },
     output: async (request, response, next) => {
