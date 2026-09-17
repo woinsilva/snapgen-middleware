@@ -84,6 +84,14 @@ export class StatelessProjectService {
   }
 
   async advance(projectState: string, requestId: string): Promise<ProjectResponse> {
+    const reserved = this.reserveNextScene(projectState);
+    const reservedState = this.tokens.verify(reserved.projectState);
+    return reservedState.scenes.some((scene) => scene.status === 'submitting')
+      ? this.submitReservedScene(reserved.projectState, requestId)
+      : reserved;
+  }
+
+  reserveNextScene(projectState: string): ProjectResponse {
     const state = structuredClone(this.tokens.verify(projectState));
     if (state.status === 'completed' || state.status === 'failed') return this.response(state, projectState);
     if (state.status === 'assembling') return this.response(state, projectState);
@@ -123,6 +131,16 @@ export class StatelessProjectService {
     assertSceneTransition('pending', 'submitting');
     pending.status = 'submitting';
     pending.attemptNumber = 1;
+    return this.updatedResponse(state);
+  }
+
+  async submitReservedScene(projectState: string, requestId: string): Promise<ProjectResponse> {
+    const state = structuredClone(this.tokens.verify(projectState));
+    const pending = state.scenes.find((scene) => scene.status === 'submitting');
+    if (!pending) throw new ApiError(409, 'PROJECT_SUBMISSION_NOT_RESERVED', 'No scene is reserved for provider submission.');
+    if (state.scenes.filter((scene) => scene.status === 'submitting').length !== 1) {
+      throw new ApiError(409, 'INVALID_PROJECT_SUBMISSION_STATE', 'Exactly one scene must be reserved for provider submission.');
+    }
     const prompt = pending.continuityInstructions
       ? `${pending.prompt}\n\nContinuity instructions: ${pending.continuityInstructions}`
       : pending.prompt;

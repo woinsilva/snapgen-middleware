@@ -26,6 +26,8 @@ describe('OpenAPI contract', () => {
     expect(document).toContain('/video/projects/start:');
     expect(document).toContain('/video/projects/advance:');
     expect(document).toContain('/video/projects/status:');
+    expect(document).toContain('/video/projects/generation:');
+    expect(document).toContain('/video/projects/{projectId}/generation/{generationJobId}:');
     expect(document).toContain('/video/projects/continue:');
     expect(document).toContain('/video/projects/render:');
     expect(document).toContain('/video/projects/output/{projectId}:');
@@ -37,12 +39,14 @@ describe('OpenAPI contract', () => {
     const operationIds = [...document.matchAll(/^\s+operationId:\s+(\S+)\s*$/gm)].map((match) => match[1]);
     expect(operationIds).toEqual([
       'healthCheck', 'generateVideo', 'getVideoModels', 'extendVideo', 'generateStoryboard',
-      'startVideoProject', 'advanceVideoProject', 'getVideoProjectStatus', 'renderVideoProject', 'getVideoProjectRenderStatus',
+      'startVideoProject', 'startVideoProjectGeneration', 'getVideoProjectGenerationStatus', 'renderVideoProject', 'getVideoProjectRenderStatus',
       'getVideoGenerationStatus',
     ]);
     expect(new Set(operationIds).size).toBe(operationIds.length);
     expect(document).toContain('/video/projects/{projectId}/render/{renderJobId}:');
     expect(document).not.toContain('/video/projects/continue:');
+    expect(document).not.toContain('/video/projects/advance:');
+    expect(document).not.toContain('/video/projects/status:');
     expect(document).not.toContain('/video/projects/output/{projectId}:');
     expect(document).not.toContain('video/mp4');
     expect(document).toContain("aspect_ratio: '16:9'");
@@ -56,10 +60,10 @@ describe('OpenAPI contract', () => {
       operationFlags.set(match[1]!, match[2] === 'true');
     }
     expect([...operationFlags.entries()].filter(([, consequential]) => consequential).map(([id]) => id)).toEqual([
-      'generateVideo', 'extendVideo', 'generateStoryboard', 'advanceVideoProject',
+      'generateVideo', 'extendVideo', 'generateStoryboard', 'startVideoProjectGeneration',
     ]);
     expect(operationFlags.get('startVideoProject')).toBe(false);
-    expect(operationFlags.get('getVideoProjectStatus')).toBe(false);
+    expect(operationFlags.get('getVideoProjectGenerationStatus')).toBe(false);
     expect(operationFlags.get('renderVideoProject')).toBe(false);
     expect(operationFlags.get('getVideoProjectRenderStatus')).toBe(false);
   });

@@ -33,27 +33,39 @@ Content-Type: application/json
 }
 ```
 
-O cliente preserva `<LATEST_PROJECT_STATE>` e, após autorização de custo, inicia no máximo uma cena:
+O cliente preserva `<LATEST_PROJECT_STATE>`, informa o máximo planejado e, após uma única autorização do projeto, inicia o job para todas as cenas restantes:
 
 ```http
-POST /video/projects/advance
+POST /video/projects/generation
 x-api-key: <configured-in-gpt-builder>
 Content-Type: application/json
 
 { "projectState": "<LATEST_PROJECT_STATE>" }
 ```
 
-Se a cena estiver `processing`, consulte somente seu status:
+Resposta HTTP 202:
 
-```http
-POST /video/projects/status
-x-api-key: <configured-in-gpt-builder>
-Content-Type: application/json
-
-{ "projectState": "<LATEST_PROJECT_STATE>" }
+```json
+{
+  "projectId": "<PROJECT_ID>",
+  "generationJobId": "<GENERATION_JOB_ID>",
+  "status": "processing",
+  "projectState": "<LATEST_PROJECT_STATE>",
+  "scenes": { "total": 9, "completed": 0, "processing": 1, "pending": 8 },
+  "progress": 5,
+  "maxPaidOperations": 9,
+  "error": null
+}
 ```
 
-`status` faz no máximo um GET ao provider, nunca inicia cena e nunca faz POST pago. Cada resposta substitui o token anterior. Quando a cena concluir, somente uma chamada posterior a `advance` inicia a próxima. Repita sem paralelismo até o projeto retornar `assembling`; então:
+Em uma interação posterior, consulte somente o mesmo job:
+
+```http
+GET /video/projects/<PROJECT_ID>/generation/<GENERATION_JOB_ID>
+x-api-key: <configured-in-gpt-builder>
+```
+
+O status nunca cria outro job. O worker faz polling controlado e gera cenas estritamente em sequência. Cada resposta substitui o token anterior. Consulte no máximo uma vez por interação. Quando retornar `assembling`, inicie separadamente o render:
 
 ```http
 POST /video/projects/render

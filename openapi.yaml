@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SnapGen Video Middleware
-  version: 3.0.0
+  version: 3.1.0
   description: JSON API for direct SnapGen workflows and stateless long-video project orchestration without exposing credentials.
 servers:
   - url: https://snapgen-middleware.onrender.com
@@ -257,6 +257,63 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         default:
           $ref: '#/components/responses/SnapGenError'
+  /video/projects/generation:
+    post:
+      operationId: startVideoProjectGeneration
+      x-openai-isConsequential: true
+      summary: Start one asynchronous job for all remaining project scenes
+      description: Reserves and processes the signed remaining plan strictly sequentially. Duplicate starts return the same instance-local job.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectStateRequest'
+      responses:
+        '202':
+          description: Whole-project generation job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationJobResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Project is not idle, has no pending scenes, or conflicts with an existing job
+  /video/projects/{projectId}/generation/{generationJobId}:
+    get:
+      operationId: getVideoProjectGenerationStatus
+      x-openai-isConsequential: false
+      summary: Get asynchronous whole-project generation status
+      description: Returns instance-local status and the latest signed state without starting another generation job.
+      security:
+        - MiddlewareApiKey: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: generationJobId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current generation job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationJobResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Generation job expired, was lost after restart, or does not exist
   /video/projects/continue:
     post:
       operationId: continueVideoProject
@@ -483,6 +540,35 @@ components:
                 code: { type: string }
                 message: { type: string }
                 retryable: { type: boolean, const: false }
+            - type: 'null'
+    GenerationJobResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, generationJobId, status, projectState, scenes, progress, maxPaidOperations, error]
+      properties:
+        projectId: { type: string, format: uuid }
+        generationJobId: { type: string, format: uuid }
+        status: { type: string, enum: [processing, assembling, failed] }
+        projectState: { type: string }
+        scenes:
+          type: object
+          additionalProperties: false
+          required: [total, completed, processing, pending]
+          properties:
+            total: { type: integer }
+            completed: { type: integer }
+            processing: { type: integer }
+            pending: { type: integer }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        maxPaidOperations: { type: integer, minimum: 1 }
+        error:
+          anyOf:
+            - type: object
+              additionalProperties: false
+              required: [code, message]
+              properties:
+                code: { type: string }
+                message: { type: string }
             - type: 'null'
     RenderJobResponse:
       type: object

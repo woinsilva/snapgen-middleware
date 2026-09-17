@@ -1,8 +1,8 @@
-PACOTE FINAL — SNAPGEN AI VIDEO STUDIO V3 STATELESS
+PACOTE FINAL — SNAPGEN AI VIDEO STUDIO V3.1 ASYNC GENERATION
 
 ESCOPO
 
-- Runtime adaptado para render assíncrono compatível com o timeout de GPT Actions.
+- Runtime adaptado para um único job assíncrono de geração de todas as cenas restantes, além do render assíncrono existente.
 - Download MP4 removido do contrato das Actions e exposto por URL temporária assinada, diretamente utilizável no navegador.
 - Actions V1/V2 preservadas.
 - O Custom GPT atualmente publicado, o Render e os secrets não foram alterados durante esta preparação local.
@@ -13,10 +13,14 @@ Anterior:
 - POST /video/projects/render aguardava todo o processamento e retornava HTTP 200 com ProjectResponse.
 - GET /video/projects/output/{projectId} exigia x-api-key.
 
-Novo:
-- POST /video/projects/advance é o único comando V3 que pode iniciar uma nova cena; inicia no máximo uma e rejeita avanço durante processing.
-- POST /video/projects/status é uma consulta não consequential; faz no máximo um GET sem retry, nunca inicia cena e nunca emite POST pago.
-- POST /video/projects/continue permanece no runtime somente como compatibilidade e foi removido do contrato do Custom GPT.
+Novo V3.1:
+- POST /video/projects/generation cria ou devolve o único generation job do projeto/plano na instância e explicita maxPaidOperations restante.
+- GET /video/projects/{projectId}/generation/{generationJobId} consulta o snapshot mais recente sem iniciar outro job.
+- O worker reserva a próxima cena no state assinado antes do POST, gera estritamente em sequência e nunca repete POST ambíguo.
+- O job termina em assembling; render continua sendo uma Action separada.
+- Advance/status/continue permanecem no runtime para compatibilidade, mas não aparecem no OpenAPI do Custom GPT. Advance/continue são bloqueados enquanto existir generation job.
+- No runtime legado, POST /video/projects/advance ainda inicia no máximo uma cena e POST /video/projects/status ainda consulta no máximo um status sem POST pago.
+- POST /video/projects/continue também permanece somente para compatibilidade; os três endpoints manuais foram removidos do contrato V3.1 do Custom GPT.
 - POST /video/projects/render valida o state, agenda o trabalho efêmero e retorna HTTP 202 com projectId, renderJobId e status processing.
 - GET /video/projects/{projectId}/render/{renderJobId} retorna JSON com processing, completed ou failed.
 - Quando completed, o status inclui o novo projectState e uma downloadUrl absoluta temporária.
@@ -44,7 +48,7 @@ SEGURANÇA
 ARTEFATOS DO CUSTOM GPT
 
 - OPENAPI-FINAL.yaml: contrato V1/V2/V3 com somente Actions textuais/JSON.
-- INSTRUCTIONS-FINAL.txt: workflow V3 Stateless com comando pago `advanceVideoProject`, consulta gratuita `getVideoProjectStatus`, compatibilidade V1/V2 secundária, render assíncrono e output temporário.
+- INSTRUCTIONS-FINAL.txt: workflow V3.1 com uma autorização para `startVideoProjectGeneration`, consulta `getVideoProjectGenerationStatus`, compatibilidade V1/V2 secundária, render assíncrono e output temporário.
 - GPT-BUILDER-CHECKLIST.txt: atualização manual e validação no Builder.
 - GPT-PREVIEW-TESTS.txt: testes gratuitos e testes pagos futuros separados.
 - HTTP-FLOW-EXAMPLE.md: fluxo HTTP completo com placeholders seguros.
@@ -57,33 +61,33 @@ ACTIONS
 - extendVideo
 - generateStoryboard
 - startVideoProject
-- advanceVideoProject
-- getVideoProjectStatus
+- startVideoProjectGeneration
+- getVideoProjectGenerationStatus
 - renderVideoProject
 - getVideoProjectRenderStatus
 - getVideoGenerationStatus
 
 CONSEQUENTIAL
 
-- true: generateVideo, extendVideo, generateStoryboard, advanceVideoProject.
-- false: startVideoProject, getVideoProjectStatus, renderVideoProject e todos os GETs.
+- true: generateVideo, extendVideo, generateStoryboard, startVideoProjectGeneration.
+- false: startVideoProject, getVideoProjectGenerationStatus, renderVideoProject e todos os GETs.
 - Marcação feita com x-openai-isConsequential.
 
 VARIÁVEIS
 
 - PROJECT_RENDER_JOB_TTL_SECONDS: opcional, default 3600.
+- PROJECT_GENERATION_JOB_TTL_SECONDS: opcional, default 14400.
 - PUBLIC_BASE_URL: opcional; override da URL pública fora do Render.
 - RENDER_EXTERNAL_URL: fornecida automaticamente pelo Render.
 - Nenhum novo secret foi introduzido.
 
 VALIDAÇÃO
 
-- npm ci: aprovado, zero vulnerabilidades.
 - typecheck: aprovado.
 - lint: aprovado.
 - build: aprovado.
-- testes: 99 aprovados, 1 teste de mídia ignorado, 100 total.
-- command/query V3: advance inicia no máximo uma cena; status nunca gera, consulta no máximo uma vez e não inicia a próxima cena.
+- testes: 107 aprovados, 1 teste de mídia ignorado, 108 total.
+- generation job V3.1: uma instância por projeto/plano, cenas sequenciais, um POST máximo por cena, polling limitado e nenhuma repetição ambígua.
 - lifecycle de token: sequência real de duas cenas, JSON round-trip, token mais recente, state legado schema 2 e adulteração cobertos.
 - testes V3 assíncronos: resposta 202, processing, completed, failed, autenticação do status e URL absoluta cobertos.
 - download: acesso público assinado, adulteração, expiração, projeto incorreto, output ausente e headers seguros cobertos.
@@ -95,7 +99,8 @@ VALIDAÇÃO
 
 LIMITAÇÕES RESTANTES
 
-- Jobs e arquivos são efêmeros. Restart/deploy pode interromper um render e apagar job/output.
+- Generation jobs, render jobs e arquivos são efêmeros. Restart/deploy pode interromper trabalho e apagar metadata/output.
+- Idempotência é forte somente dentro do processo. Sem storage compartilhado ou idempotency key do provider, token pending antigo reutilizado após restart não pode ser detectado; o cliente deve parar em job perdido.
 - O Map é por instância. Escalar para múltiplas instâncias exige job store e object storage compartilhados.
 - O GPT deve preservar o Project State mais recente; tokens antigos continuam sujeitos à limitação de replay stateless já documentada.
 - O link deixa de funcionar após expiração ou cleanup e não implica armazenamento permanente.

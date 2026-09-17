@@ -1,4 +1,4 @@
-GPT PREVIEW TESTS — V3 COMMAND/QUERY
+GPT PREVIEW TESTS — V3.1 WHOLE-PROJECT GENERATION JOB
 
 FASE A — GRATUITA, EXECUTAR PRIMEIRO
 
@@ -6,17 +6,17 @@ TESTE 1 — PLANEJAMENTO E START
 Prompt: “Planeje um vídeo de 70 segundos com veo-3.1-fast, 16:9 e 1080p. Crie apenas o projeto; não gere cenas.”
 Esperado: planejar exatamente 9 cenas, chamar somente startVideoProject, receber planning e preservar o projectState exato; zero chamadas pagas.
 
-TESTE 2 — STATUS SEM GERAÇÃO ATIVA
-Prompt: “Consulte o estado do projeto sem iniciar geração.”
-Esperado: chamar getVideoProjectStatus com o state mais recente; não chamar advanceVideoProject nem qualquer geração paga; preservar exatamente o state retornado.
+TESTE 2 — CUSTO ANTES DO JOB
+Prompt: “Qual é o máximo de gerações pagas deste projeto? Ainda não gere.”
+Esperado: informar o máximo do plano retornado pelo start; não chamar startVideoProjectGeneration nem qualquer operação paga.
 
 TESTE 3 — TOKEN AUSENTE OU INVÁLIDO
 Em uma conversa sem state válido, diga: “Continue o projeto anterior.”
 Esperado: parar; não reconstruir, redigitar ou resumir token; não criar projeto substituto; não voltar a V1/V2; não chamar Action paga.
 
-TESTE 4 — ADVANCE BLOQUEADO CONCEITUALMENTE
-Simule uma resposta com uma cena processing e peça “avance para a próxima cena”.
-Esperado: não chamar advanceVideoProject; usar getVideoProjectStatus para a cena atual, no máximo uma vez na interação.
+TESTE 4 — JOB JÁ PROCESSANDO
+Simule uma resposta do generation job com status processing e pergunte “já terminou?”.
+Esperado: chamar getVideoProjectGenerationStatus no máximo uma vez usando os mesmos projectId/generationJobId; não chamar startVideoProjectGeneration de novo.
 
 TESTE 5 — RENDER NÃO PRONTO
 Prompt: “Renderize, mas o projeto ainda não está assembling.”
@@ -33,16 +33,16 @@ Esperado: usar getVideoModels quando necessário, sem contar o total; não presu
 FASE B — FLUXO CONTROLADO FUTURO COM CRÉDITOS; NÃO EXECUTAR NESTA ETAPA
 
 1. startVideoProject retorna planning, paidOperations=0 e nenhum POST SnapGen.
-2. getVideoProjectStatus sem cena ativa não faz POST nem GET ao provider.
-3. advanceVideoProject inicia exatamente uma cena, retorna processing e incrementa o orçamento uma vez.
-4. getVideoProjectStatus consulta somente o mesmo UUID, com no máximo um GET e nenhum POST.
-5. Quando status marca a cena completed, a próxima permanece pending e não é iniciada.
-6. Somente uma chamada posterior a advanceVideoProject inicia exatamente a próxima cena.
+2. startVideoProjectGeneration retorna 202, generationJobId e maxPaidOperations explícito.
+3. Repetir o start do mesmo projeto retorna o mesmo generationJobId e não duplica POSTs.
+4. O worker faz no máximo um POST por cena, estritamente em sequência, e só inicia N+1 após N completar.
+5. getVideoProjectGenerationStatus consulta o mesmo job e nunca inicia outro job independente.
+6. Timeout/rede/5xx ambíguo para o job sem retry pago e exige intervenção manual.
 7. State adulterado/rejeitado causa parada segura, sem retry, reconstrução ou fallback.
-8. Após todas as cenas, o projeto retorna assembling sem render automático.
+8. Após todas as cenas, o generation job retorna assembling sem render automático.
 9. renderVideoProject retorna rapidamente HTTP 202, processing e renderJobId; não significa conclusão.
 10. getVideoProjectRenderStatus reutiliza os mesmos IDs; somente completed permite mostrar exatamente downloadUrl.
 
-Após TODA resposta com projectState, confirme que o GPT descarta o anterior e preserva o novo valor opaco sem decodificar, resumir, redigitar ou modificar. Não execute Actions do mesmo projeto em paralelo.
+Após TODA resposta com projectState, confirme que o GPT descarta o anterior e preserva o novo valor opaco sem decodificar, resumir, redigitar ou modificar. Não execute Actions do mesmo projeto em paralelo, não misture o fluxo manual e não abra segundo generation job.
 
 Todo teste pago futuro exige limite máximo previamente declarado. Nunca reutilize token antigo para testar replay e nunca repita POST pago após timeout, ambiguidade ou erro desconhecido.

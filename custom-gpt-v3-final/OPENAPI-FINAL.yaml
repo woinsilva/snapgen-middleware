@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SnapGen AI Video Studio
-  version: 3.0.0
+  version: 3.1.0
   description: GPT Actions contract for SnapGen simple-video workflows and stateless long-video projects.
 servers:
   - url: https://snapgen-middleware.onrender.com
@@ -187,12 +187,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '413':
           description: Project State Token would exceed the configured limit
-  /video/projects/advance:
+  /video/projects/generation:
     post:
-      operationId: advanceVideoProject
+      operationId: startVideoProjectGeneration
       x-openai-isConsequential: true
-      summary: Start at most one next scene generation
-      description: Potentially paid command. Uses the latest signed state to start at most one pending scene. Never polls an active scene and never retries a paid POST.
+      summary: Start one asynchronous job for all remaining project scenes
+      description: Consequential command authorizing at most maxPaidOperations generation POSTs already bounded by the signed plan. Duplicate starts return the same instance-local job and never create a second paid workflow.
       security:
         - MiddlewareApiKey: []
       requestBody:
@@ -202,47 +202,50 @@ paths:
             schema:
               $ref: '#/components/schemas/ProjectStateRequest'
       responses:
-        '200':
-          description: Updated signed project state
+        '202':
+          description: Whole-project generation job accepted
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProjectResponse'
+                $ref: '#/components/schemas/GenerationJobResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
-          description: A scene is already processing; use getVideoProjectStatus
+          description: Project is not idle, has no pending scenes, or conflicts with an existing job
         default:
           $ref: '#/components/responses/SnapGenError'
-  /video/projects/status:
-    post:
-      operationId: getVideoProjectStatus
+  /video/projects/{projectId}/generation/{generationJobId}:
+    get:
+      operationId: getVideoProjectGenerationStatus
       x-openai-isConsequential: false
-      summary: Synchronize read-only project generation status
-      description: Read-only query. If one scene is processing, performs at most one non-retrying SnapGen status GET for that same scene. Never starts a scene or issues a paid POST.
+      summary: Get asynchronous whole-project generation status
+      description: Read-only instance-local job status. Never starts another job or issues an independent generation POST. A missing job after restart must be handled as manual intervention, never automatic restart.
       security:
         - MiddlewareApiKey: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ProjectStateRequest'
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: generationJobId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
       responses:
         '200':
-          description: Latest signed project state; no new scene was started
+          description: Current generation job status and latest signed state
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProjectResponse'
+                $ref: '#/components/schemas/GenerationJobResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        default:
-          $ref: '#/components/responses/SnapGenError'
+        '404':
+          description: Generation job expired, was lost after restart, or does not exist
   /video/projects/render:
     post:
       operationId: renderVideoProject
@@ -419,6 +422,40 @@ components:
                 code: { type: string }
                 message: { type: string }
                 retryable: { type: boolean, const: false }
+            - type: 'null'
+    GenerationJobResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, generationJobId, status, projectState, scenes, progress, maxPaidOperations, error]
+      properties:
+        projectId: { type: string, format: uuid }
+        generationJobId: { type: string, format: uuid }
+        status: { type: string, enum: [processing, assembling, failed] }
+        projectState:
+          type: string
+          description: Latest signed state. Replace the previous token, keep it opaque, and never show it to the user.
+        scenes:
+          type: object
+          additionalProperties: false
+          required: [total, completed, processing, pending]
+          properties:
+            total: { type: integer }
+            completed: { type: integer }
+            processing: { type: integer }
+            pending: { type: integer }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        maxPaidOperations:
+          type: integer
+          minimum: 1
+          description: Maximum remaining paid generation POSTs authorized for this exact signed plan.
+        error:
+          anyOf:
+            - type: object
+              additionalProperties: false
+              required: [code, message]
+              properties:
+                code: { type: string }
+                message: { type: string }
             - type: 'null'
     RenderJobResponse:
       type: object

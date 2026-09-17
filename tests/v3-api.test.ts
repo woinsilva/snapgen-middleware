@@ -30,6 +30,7 @@ describe('V3 stateless project API', () => {
     expect((await request(app).post('/video/projects/start').send(projectInput())).status).toBe(401);
     expect((await request(app).post('/video/projects/advance').send({ projectState: 'pst1.test.test' })).status).toBe(401);
     expect((await request(app).post('/video/projects/status').send({ projectState: 'pst1.test.test' })).status).toBe(401);
+    expect((await request(app).post('/video/projects/generation').send({ projectState: 'pst1.test.test' })).status).toBe(401);
   });
 
   it('starts a valid project with 202 and no provider call', async () => {
@@ -99,6 +100,31 @@ describe('V3 stateless project API', () => {
     const started = await request(app).post('/video/projects/start').set('x-api-key', env.MIDDLEWARE_API_KEY).send(projectInput());
     expect((await request(app).post('/video/projects/continue').send({ projectState: started.body.projectState })).status).toBe(401);
     expect((await request(app).post('/video/projects/continue').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: started.body.projectState })).status).toBe(200);
+  });
+
+  it('exposes an idempotent generation job and blocks mixed manual advance', async () => {
+    const neverCompletes: VideoProvider = {
+      ...provider,
+      generateVideo: vi.fn(async () => ({ uuid, status: 'processing', provider: 'snapgen', model: 'veo-3.1-fast' })),
+      getVideoOnce: vi.fn(() => new Promise(() => undefined)),
+    };
+    const app = createApp(env, neverCompletes);
+    const project = await request(app).post('/video/projects/start').set('x-api-key', env.MIDDLEWARE_API_KEY).send(projectInput());
+    const first = await request(app).post('/video/projects/generation').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: project.body.projectState });
+    const duplicate = await request(app).post('/video/projects/generation').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: project.body.projectState });
+    expect(first.status).toBe(202);
+    expect(first.body).toMatchObject({ status: 'processing', maxPaidOperations: 9, error: null });
+    expect(duplicate.status).toBe(202);
+    expect(duplicate.body.generationJobId).toBe(first.body.generationJobId);
+
+    const status = await request(app).get(`/video/projects/${first.body.projectId}/generation/${first.body.generationJobId}`).set('x-api-key', env.MIDDLEWARE_API_KEY);
+    expect(status.status).toBe(200);
+    const manual = await request(app).post('/video/projects/advance').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: project.body.projectState });
+    expect(manual.status).toBe(409);
+    expect(manual.body.error).toBe('GENERATION_JOB_ACTIVE');
+    const legacy = await request(app).post('/video/projects/continue').set('x-api-key', env.MIDDLEWARE_API_KEY).send({ projectState: project.body.projectState });
+    expect(legacy.status).toBe(409);
+    expect(legacy.body.error).toBe('GENERATION_JOB_ACTIVE');
   });
 
   it('keeps V1/V2 available when PROJECT_STATE_SECRET is absent', async () => {

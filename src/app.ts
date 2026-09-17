@@ -22,6 +22,7 @@ import { SecureMediaDownloader } from './media/secure-media-downloader.js';
 import { FfmpegMediaProcessor } from './media/ffmpeg-media-processor.js';
 import { EphemeralProjectRenderer } from './projects/ephemeral-project-renderer.js';
 import { RenderJobManager } from './projects/render-job.manager.js';
+import { GenerationJobManager } from './projects/generation-job.manager.js';
 
 function corsOrigins(value: string): true | string[] {
   if (value.trim() === '*') return true;
@@ -65,6 +66,9 @@ export function createApp(
   const renderJobs = projectService
     ? new RenderJobManager(projectService, publicBaseUrl, env.PROJECT_RENDER_JOB_TTL_SECONDS ?? 3_600)
     : undefined;
+  const generationJobs = projectService
+    ? new GenerationJobManager(projectService, { jobTtlSeconds: env.PROJECT_GENERATION_JOB_TTL_SECONDS ?? 14_400 })
+    : undefined;
   const videoRateLimit = rateLimit({
     windowMs: env.RATE_LIMIT_WINDOW_MS,
     limit: env.RATE_LIMIT_MAX,
@@ -85,7 +89,7 @@ export function createApp(
   app.use('/privacy', privacyRouter);
   app.use('/video/models', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), modelsRouter);
   app.use('/video/projects/output', videoRateLimit, createProjectOutputRouter(projectService, outputStore));
-  app.use('/video/projects', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), createProjectRouter(projectService, renderJobs));
+  app.use('/video/projects', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), createProjectRouter(projectService, renderJobs, generationJobs));
   app.use('/video', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), createVideoRouter(provider));
   app.use(notFoundHandler);
   app.use(createErrorHandler(env));

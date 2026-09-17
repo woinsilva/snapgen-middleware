@@ -168,6 +168,7 @@ NODE_ENV=development
 LOG_LEVEL=info
 PROJECT_STATE_SECRET=
 PROJECT_RENDER_JOB_TTL_SECONDS=3600
+PROJECT_GENERATION_JOB_TTL_SECONDS=14400
 PUBLIC_BASE_URL=
 ```
 
@@ -177,7 +178,7 @@ O `.env` real é ignorado pelo Git e pelo contexto Docker. Nunca configure `SNAP
 
 ## Projetos de vídeo stateless (V3)
 
-A V3 usa `/video/projects/start`, o comando potencialmente pago `/video/projects/advance`, a consulta gratuita `/video/projects/status`, render assíncrono via `/video/projects/render`, status JSON em `/video/projects/{projectId}/render/{renderJobId}` e download temporário. `/video/projects/continue` permanece somente para compatibilidade. O cliente deve preservar exatamente o token mais recente. Jobs e arquivos são efêmeros e podem ser perdidos em restart/deploy. Consulte [docs/stateless-v3.md](docs/stateless-v3.md) para fluxo, replay, budget guard e segurança.
+A V3.1 usa `/video/projects/start`, um único comando potencialmente pago `/video/projects/generation`, consulta gratuita em `/video/projects/{projectId}/generation/{generationJobId}`, render assíncrono e download temporário. O worker gera as cenas estritamente em sequência e para em `assembling`; render nunca começa automaticamente. `/advance`, `/status` e `/continue` permanecem no runtime somente para compatibilidade/diagnóstico e não aparecem no contrato do Custom GPT. O cliente deve preservar exatamente o token mais recente. Jobs e arquivos são efêmeros e podem ser perdidos em restart/deploy. Consulte [docs/stateless-v3.md](docs/stateless-v3.md) para fluxo, replay, budget guard e segurança.
 
 ## Render
 

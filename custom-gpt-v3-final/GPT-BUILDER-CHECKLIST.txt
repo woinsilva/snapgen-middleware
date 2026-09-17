@@ -1,4 +1,4 @@
-CHECKLIST — CUSTOM GPT V3 STATELESS
+CHECKLIST — CUSTOM GPT V3.1 ASYNC GENERATION
 
 [ ] 1. Abrir o GPT existente “SnapGen AI Video Studio”; não criar outro GPT.
 [ ] 2. Não alterar nome, Knowledge ou Capabilities sem motivo independente.
@@ -18,20 +18,20 @@ CHECKLIST — CUSTOM GPT V3 STATELESS
     [ ] extendVideo
     [ ] generateStoryboard
     [ ] startVideoProject
-    [ ] advanceVideoProject
-    [ ] getVideoProjectStatus
+    [ ] startVideoProjectGeneration
+    [ ] getVideoProjectGenerationStatus
     [ ] renderVideoProject
     [ ] getVideoProjectRenderStatus
 [ ] 11. Confirmar que o endpoint binário /video/projects/output/{projectId} NÃO aparece como Action.
-[ ] 12. Confirmar consequential=true em generateVideo, extendVideo, generateStoryboard e advanceVideoProject.
-[ ] 13. Confirmar consequential=false em startVideoProject, getVideoProjectStatus, renderVideoProject e todos os GETs.
+[ ] 12. Confirmar consequential=true em generateVideo, extendVideo, generateStoryboard e startVideoProjectGeneration.
+[ ] 13. Confirmar consequential=false em startVideoProject, getVideoProjectGenerationStatus, renderVideoProject e todos os GETs.
 [ ] 14. Salvar como draft; não publicar antes dos testes gratuitos.
 [ ] 15. Executar os testes gratuitos de GPT-PREVIEW-TESTS.txt na ordem.
 [ ] 16. Confirmar que getVideoModels não resulta em contagem total de modelos na resposta do GPT.
 [ ] 17. Confirmar que um projeto de 70s cria exatamente 9 cenas antes de start.
 [ ] 18. Confirmar que start preserva projectState internamente e não o mostra ao usuário.
-[ ] 19. Teste crítico na mesma conversa: start → advance → status → status → advance, sempre substituindo o token exato e nunca reutilizando versões anteriores.
-[ ] 19.1 Confirmar que status nunca inicia cena e que advance é bloqueado por PROJECT_STATUS_REQUIRED enquanto houver cena processing.
+[ ] 19. Teste crítico na mesma conversa: start → informar maxPaidOperations → iniciar generation job uma vez → consultar o mesmo job em interações posteriores, sempre substituindo o token exato.
+[ ] 19.1 Confirmar que o GPT nunca inicia segundo generation job, nunca mistura advance/status manual e faz no máximo uma consulta de generation-status por interação.
 [ ] 20. Se o GPT perder projectState, confirmar que ele para sem reconstruir token ou iniciar outro projeto.
 [ ] 21. Confirmar que render retorna renderJobId rapidamente e que o GPT consulta status pelos mesmos projectId/renderJobId.
 [ ] 21.1 Confirmar que HTTP 202 e status processing nunca são apresentados como vídeo concluído e que cada nova consulta reutiliza o mesmo renderJobId, sem criar outro job.
@@ -39,4 +39,4 @@ CHECKLIST — CUSTOM GPT V3 STATELESS
 [ ] 23. Executar teste pago apenas em etapa posterior, com limite de custo explícito e autorização do usuário.
 [ ] 24. Após todos os testes, revisar o diff manual do Builder e só então publicar.
 
-Observação operacional: render jobs e outputs são efêmeros e vinculados à instância. Restart/deploy pode causar RENDER_JOB_NOT_FOUND ou perda do arquivo. Não gerar novamente automaticamente.
+Observação operacional: generation jobs, render jobs e outputs são efêmeros e vinculados à instância. Restart/deploy pode causar job-not-found ou perda do arquivo. Nunca iniciar outro generation job automaticamente.
