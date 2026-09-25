@@ -14,6 +14,10 @@ function outputSignature(secret: string, encodedPayload: string): Buffer {
   return createHmac('sha256', secret).update(`pso1.${encodedPayload}`).digest();
 }
 
+function frameSignature(secret: string, encodedPayload: string): Buffer {
+  return createHmac('sha256', secret).update(`psf1.${encodedPayload}`).digest();
+}
+
 function decodeCanonicalBase64Url(value: string): Buffer | undefined {
   if (!/^[A-Za-z0-9_-]+$/.test(value)) return undefined;
   const decoded = Buffer.from(value, 'base64url');
@@ -84,6 +88,33 @@ export class ProjectStateTokenService {
       const value = JSON.parse(payload.toString('utf8')) as Record<string, unknown>;
       if (value.projectId !== expectedProjectId || typeof value.handle !== 'string' || typeof value.expiresAt !== 'string') return this.invalid();
       if (new Date(value.expiresAt).getTime() <= this.now().getTime()) throw new ApiError(410, 'PROJECT_OUTPUT_EXPIRED', 'The ephemeral project output has expired.');
+      return { handle: value.handle, expiresAt: value.expiresAt };
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      return this.invalid();
+    }
+  }
+
+  signFrameAccess(projectId: string, frame: ProjectOutputState): string {
+    const payload = Buffer.from(JSON.stringify({ projectId, handle: frame.handle, expiresAt: frame.expiresAt })).toString('base64url');
+    return `psf1.${payload}.${frameSignature(this.currentSecret, payload).toString('base64url')}`;
+  }
+
+  verifyFrameAccess(token: string, expectedProjectId: string): ProjectOutputState {
+    const parts = token.split('.');
+    if (parts.length !== 3 || parts[0] !== 'psf1' || !parts[1] || !parts[2]) return this.invalid();
+    const payload = decodeCanonicalBase64Url(parts[1]);
+    const supplied = decodeCanonicalBase64Url(parts[2]);
+    if (!payload || !supplied) return this.invalid();
+    const valid = [this.currentSecret, this.previousSecret].filter((value): value is string => Boolean(value)).some((secret) => {
+      const expected = frameSignature(secret, parts[1]!);
+      return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+    });
+    if (!valid) return this.invalid();
+    try {
+      const value = JSON.parse(payload.toString('utf8')) as Record<string, unknown>;
+      if (value.projectId !== expectedProjectId || typeof value.handle !== 'string' || typeof value.expiresAt !== 'string') return this.invalid();
+      if (new Date(value.expiresAt).getTime() <= this.now().getTime()) throw new ApiError(410, 'CONTINUITY_FRAME_EXPIRED', 'The continuity frame has expired.');
       return { handle: value.handle, expiresAt: value.expiresAt };
     } catch (error) {
       if (error instanceof ApiError) throw error;

@@ -35,7 +35,9 @@ describe('OpenAPI contract', () => {
   });
 
   it('provides a V1/V2/V3 GPT Actions contract with JSON-only actions and unique operation IDs', async () => {
+    const canonical = await readFile(new URL('../openapi-gpt.yaml', import.meta.url), 'utf8');
     const document = await readFile(new URL('../custom-gpt-v3-final/OPENAPI-FINAL.yaml', import.meta.url), 'utf8');
+    expect(canonical.replaceAll('\r\n', '\n').trimEnd()).toBe(document.replaceAll('\r\n', '\n').trimEnd());
     const operationIds = [...document.matchAll(/^\s+operationId:\s+(\S+)\s*$/gm)].map((match) => match[1]);
     expect(operationIds).toEqual([
       'healthCheck', 'generateVideo', 'getVideoModels', 'extendVideo', 'generateStoryboard',

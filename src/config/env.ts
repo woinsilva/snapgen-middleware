@@ -17,6 +17,7 @@ const envSchema = z.object({
   PROJECT_STATE_TOKEN_TTL_SECONDS: z.coerce.number().int().min(3600).max(31_536_000).optional(),
   PROJECT_STATE_TOKEN_MAX_BYTES: z.coerce.number().int().min(16_384).max(262_144).optional(),
   PROJECT_OUTPUT_TTL_SECONDS: z.coerce.number().int().min(60).max(86_400).optional(),
+  PROJECT_CONTINUITY_FRAME_TTL_SECONDS: z.coerce.number().int().min(60).max(86_400).optional(),
   PROJECT_RENDER_JOB_TTL_SECONDS: z.coerce.number().int().min(300).max(86_400).optional(),
   PROJECT_RENDER_MAX_EXECUTION_SECONDS: z.coerce.number().int().min(600).max(86_400).optional(),
   PROJECT_GENERATION_JOB_TTL_SECONDS: z.coerce.number().int().min(300).max(86_400).optional(),

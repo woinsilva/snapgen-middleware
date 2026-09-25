@@ -5,6 +5,8 @@ CHECKLIST — CUSTOM GPT V3.1 ASYNC GENERATION
 [ ] 3. Copiar integralmente INSTRUCTIONS-FINAL.txt para Instructions.
 [ ] 3.1 Confirmar que V3 Stateless é o workflow principal para projetos longos; V1/V2 permanece apenas para vídeo curto, status simples, Extend e Storyboard quando explicitamente aplicáveis.
 [ ] 4. Abrir a Action existente e substituir o schema pelo conteúdo integral de OPENAPI-FINAL.yaml.
+[ ] 4.1 Selecionar um modelo não-Pro compatível com Actions; Pro mode não disponibiliza Actions no runtime.
+[ ] 4.2 Em workspace administrado, confirmar que snapgen-middleware.onrender.com está permitido pela allowlist de domínios de Actions.
 [ ] 5. Authentication: API Key.
 [ ] 6. Authentication Type: Custom.
 [ ] 7. Header: x-api-key.
@@ -27,6 +29,7 @@ CHECKLIST — CUSTOM GPT V3.1 ASYNC GENERATION
 [ ] 13. Confirmar consequential=false em startVideoProject, getVideoProjectGenerationStatus, renderVideoProject e todos os GETs.
 [ ] 14. Salvar como draft; não publicar antes dos testes gratuitos.
 [ ] 15. Executar os testes gratuitos de GPT-PREVIEW-TESTS.txt na ordem.
+[ ] 15.1 Se as 11 operações aparecem no Builder mas não no Preview, verificar primeiro o modelo selecionado e a allowlist; não alterar o provider de vídeo para contornar uma restrição do runtime do GPT.
 [ ] 16. Confirmar que getVideoModels não resulta em contagem total de modelos na resposta do GPT.
 [ ] 17. Confirmar que um projeto de 70s cria exatamente 9 cenas antes de start.
 [ ] 18. Confirmar que start preserva projectState internamente e não o mostra ao usuário.

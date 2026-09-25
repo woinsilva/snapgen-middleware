@@ -1,40 +1,37 @@
 openapi: 3.1.0
 info:
   title: SnapGen AI Video Studio
-  version: 2.0.1
-  description: Generate, extend, and track SnapGen videos through a protected middleware.
+  version: 3.1.0
+  description: GPT Actions contract for SnapGen simple-video workflows and stateless long-video projects.
 servers:
   - url: https://snapgen-middleware.onrender.com
-    description: Production
+    description: Production deployment on Render.
 paths:
-  /video/models:
+  /health:
     get:
-      operationId: getVideoModels
-      summary: List video models and capabilities
-      description: Returns the generation registry and extend capabilities. Storyboard-specific model IDs are defined by StoryboardRequest.
-      security:
-        - MiddlewareApiKey: []
+      operationId: healthCheck
+      x-openai-isConsequential: false
+      summary: Check middleware health
+      description: Use only to verify that the middleware is online.
+      security: []
       responses:
         '200':
-          description: Supported models and their safe capabilities
+          description: Service is healthy
           content:
             application/json:
               schema:
                 type: object
-                additionalProperties: false
-                required: [models]
+                required: [status]
                 properties:
-                  models:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/VideoModel'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+                  status:
+                    type: string
+                    const: ok
   /video/generate:
     post:
       operationId: generateVideo
-      summary: Start one video generation
-      description: Starts one paid text-to-video or image-to-video operation. Never retry this POST automatically.
+      x-openai-isConsequential: true
+      summary: Start a SnapGen video generation
+      description: Use when the user asks to create a video. Returns a UUID used to check asynchronous generation status.
       security:
         - MiddlewareApiKey: []
       requestBody:
@@ -48,10 +45,10 @@ paths:
               model: veo-3.1-fast
               duration: 8
               resolution: "720p"
-              aspect_ratio: "16:9"
+              aspect_ratio: '16:9'
       responses:
         '200':
-          description: Generation accepted
+          description: SnapGen generation accepted
           content:
             application/json:
               schema:
@@ -61,40 +58,36 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         default:
-          $ref: '#/components/responses/ProviderError'
-  /video/{uuid}:
+          $ref: '#/components/responses/SnapGenError'
+  /video/models:
     get:
-      operationId: getVideoGenerationStatus
-      summary: Check one video generation
-      description: Checks the saved UUID. Reuse the same UUID while processing and never invent a video URL.
+      operationId: getVideoModels
+      x-openai-isConsequential: false
+      summary: List supported video models and capabilities
+      description: Use before generation when model capabilities or compatible parameters are unknown.
       security:
         - MiddlewareApiKey: []
-      parameters:
-        - name: uuid
-          in: path
-          required: true
-          description: UUID returned by a generation, extension, or storyboard operation.
-          schema:
-            type: string
-            format: uuid
       responses:
         '200':
-          description: Current normalized generation status
+          description: Safe model capability registry
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VideoGenerationStatus'
-        '400':
-          $ref: '#/components/responses/ValidationError'
+                type: object
+                required: [models]
+                properties:
+                  models:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VideoModel'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        default:
-          $ref: '#/components/responses/ProviderError'
   /video/extend:
     post:
       operationId: extendVideo
-      summary: Extend an existing video
-      description: Starts one paid extension for a model whose registry entry has supportsExtend=true. Never retry automatically.
+      x-openai-isConsequential: true
+      summary: Extend an existing generated video
+      description: Use only when the selected model reports supportsExtend=true. The source must be an existing SnapGen generation UUID.
       security:
         - MiddlewareApiKey: []
       requestBody:
@@ -115,12 +108,13 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         default:
-          $ref: '#/components/responses/ProviderError'
+          $ref: '#/components/responses/SnapGenError'
   /video/storyboard:
     post:
       operationId: generateStoryboard
-      summary: Generate one Grok storyboard
-      description: Starts one paid multi-scene storyboard. Use 2-10 scenes, 6 or 10 seconds each, totaling no more than 45 seconds. Never retry automatically.
+      x-openai-isConsequential: true
+      summary: Create a multi-scene Grok storyboard video
+      description: Creates 2-10 chained Grok scenes. Each scene is 6 or 10 seconds and total duration cannot exceed 45 seconds.
       security:
         - MiddlewareApiKey: []
       requestBody:
@@ -141,26 +135,202 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         default:
-          $ref: '#/components/responses/ProviderError'
-  /health:
-    get:
-      operationId: healthCheck
-      summary: Check middleware health
-      description: Use only for troubleshooting, not before every generation.
-      security: []
+          $ref: '#/components/responses/SnapGenError'
+  /video/projects/start:
+    post:
+      operationId: startVideoProject
+      x-openai-isConsequential: false
+      summary: Validate and start a stateless long-video project
+      description: Creates a signed Project State Token without calling SnapGen. The client must preserve and replace this token after every response.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartProjectRequest'
+            example:
+              concept: Uma aventura infantil na floresta
+              model: veo-3.1-fast
+              duration: 70
+              resolution: "1080p"
+              aspect_ratio: '16:9'
+              visualBible:
+                style: 2D animated children's adventure
+                characters:
+                  - id: lia
+                    description: Young explorer with a yellow backpack
+                environment: Warm enchanted forest at golden hour
+                continuityRules:
+                  - Keep Lia, her backpack, lighting, and travel direction consistent
+              scenes:
+                - { sequence: 1, prompt: Lia enters the enchanted forest, continuityInstructions: Preserve Lia and the golden-hour lighting }
+                - { sequence: 2, prompt: Lia follows a glowing trail, continuityInstructions: Continue forward along the same path }
+                - { sequence: 3, prompt: Lia meets a friendly fox, continuityInstructions: Preserve Lia and the established forest }
+                - { sequence: 4, prompt: Lia and the fox cross a stream, continuityInstructions: Keep character designs and direction consistent }
+                - { sequence: 5, prompt: They discover ancient trees, continuityInstructions: Maintain the same lighting and visual style }
+                - { sequence: 6, prompt: Fireflies guide them uphill, continuityInstructions: Continue the established journey }
+                - { sequence: 7, prompt: They reach a hidden clearing, continuityInstructions: Preserve characters and environment palette }
+                - { sequence: 8, prompt: Lia finds a glowing seed, continuityInstructions: Maintain props and camera direction }
+                - { sequence: 9, prompt: Lia plants the seed as the forest shines, continuityInstructions: Conclude with the established characters and style }
       responses:
-        '200':
-          description: Middleware is healthy
+        '202':
+          description: Stateless project initialized; no paid generation has started
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                required: [status]
-                properties:
-                  status:
-                    type: string
-                    enum: [ok]
+                $ref: '#/components/schemas/ProjectResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Project State Token would exceed the configured limit
+  /video/projects/generation:
+    post:
+      operationId: startVideoProjectGeneration
+      x-openai-isConsequential: true
+      summary: Start one asynchronous job for all remaining project scenes
+      description: Consequential command authorizing at most maxPaidOperations generation POSTs already bounded by the signed plan. Duplicate starts return the same instance-local job and never create a second paid workflow.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectStateRequest'
+      responses:
+        '202':
+          description: Whole-project generation job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationJobResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Project is not idle, has no pending scenes, or conflicts with an existing job
+        default:
+          $ref: '#/components/responses/SnapGenError'
+  /video/projects/{projectId}/generation/{generationJobId}:
+    get:
+      operationId: getVideoProjectGenerationStatus
+      x-openai-isConsequential: false
+      summary: Get asynchronous whole-project generation status
+      description: Read-only instance-local job status. Never starts another job or issues an independent generation POST. A missing job after restart must be handled as manual intervention, never automatic restart.
+      security:
+        - MiddlewareApiKey: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: generationJobId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current generation job status and latest signed state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationJobResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Generation job expired, was lost after restart, or does not exist
+  /video/projects/render:
+    post:
+      operationId: renderVideoProject
+      x-openai-isConsequential: false
+      summary: Start asynchronous assembly of a completed project
+      description: Validates the latest state and starts an ephemeral render job. Poll the JSON status endpoint; this request does not wait for FFmpeg.
+      security:
+        - MiddlewareApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectStateRequest'
+      responses:
+        '202':
+          description: Ephemeral render job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderJobResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Project is not ready or source media is unavailable
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /video/projects/{projectId}/render/{renderJobId}:
+    get:
+      operationId: getVideoProjectRenderStatus
+      x-openai-isConsequential: false
+      summary: Get asynchronous project render status
+      description: Returns processing, completed, or failed. A completed response includes a temporary browser-download URL and the latest projectState.
+      security:
+        - MiddlewareApiKey: []
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: renderJobId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current render job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderJobResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Render job expired, was lost after restart, or does not exist
+  /video/{uuid}:
+    get:
+      operationId: getVideoGenerationStatus
+      x-openai-isConsequential: false
+      summary: Get a SnapGen generation by UUID
+      description: Use after generateVideo to check whether a generation is processing, completed, or failed. Never invent a video URL.
+      security:
+        - MiddlewareApiKey: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Normalized video generation status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoGenerationStatus'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/SnapGenError'
 components:
   securitySchemes:
     MiddlewareApiKey:
@@ -168,6 +338,158 @@ components:
       in: header
       name: x-api-key
   schemas:
+    VisualBible:
+      type: object
+      additionalProperties: false
+      required: [style, characters, environment, continuityRules]
+      properties:
+        style: { type: string, minLength: 1, maxLength: 2000 }
+        characters:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, description]
+            properties:
+              id: { type: string, pattern: '^[A-Za-z0-9_-]+$' }
+              description: { type: string, minLength: 1, maxLength: 2000 }
+        environment: { type: string, minLength: 1, maxLength: 3000 }
+        continuityRules:
+          type: array
+          maxItems: 50
+          items: { type: string, minLength: 1, maxLength: 1000 }
+    ProjectSceneInput:
+      type: object
+      additionalProperties: false
+      required: [sequence, prompt]
+      properties:
+        sequence: { type: integer, minimum: 1 }
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: One causal 8-second story beat. Repeat immutable character traits and end on a clear action/frame that prepares the next scene.
+        continuityInstructions:
+          type: string
+          minLength: 1
+          maxLength: 1500
+          description: Describe exactly what carries over from the previous final frame and how the action continues without resetting.
+    StartProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [concept, model, duration, resolution, aspect_ratio, visualBible, scenes]
+      properties:
+        concept: { type: string, minLength: 1, maxLength: 4000 }
+        model: { type: string, enum: [veo-3.1-fast] }
+        duration: { type: integer, minimum: 60, maximum: 180 }
+        resolution: { type: string, enum: ["720p", "1080p"] }
+        aspect_ratio: { type: string, enum: ['16:9'] }
+        visualBible: { $ref: '#/components/schemas/VisualBible' }
+        scenes:
+          type: array
+          minItems: 8
+          maxItems: 23
+          description: Must contain exactly ceil(duration / 8) scenes, sequentially numbered from 1, with a causal beginning, middle, climax, and resolution. Runtime automatically uses each scene's real final frame as the next scene's initial frame.
+          items: { $ref: '#/components/schemas/ProjectSceneInput' }
+    ProjectStateRequest:
+      type: object
+      additionalProperties: false
+      required: [projectState]
+      properties:
+        projectState:
+          type: string
+          description: Latest middleware-signed Project State Token. Never reuse an older token after receiving a replacement.
+    ProjectResponse:
+      type: object
+      required: [projectId, status, progress, model, targetDuration, scenes, projectState, downloadUrl, outputExpiresAt, error]
+      properties:
+        projectId: { type: string, format: uuid }
+        status: { type: string, enum: [planning, generating, assembling, completed, failed] }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        model: { type: string, const: veo-3.1-fast }
+        targetDuration: { type: integer }
+        scenes:
+          type: object
+          required: [total, completed, processing, pending]
+          properties:
+            total: { type: integer }
+            completed: { type: integer }
+            processing: { type: integer }
+            pending: { type: integer }
+        projectState: { type: string }
+        downloadUrl:
+          anyOf: [{ type: string }, { type: 'null' }]
+        outputExpiresAt:
+          anyOf: [{ type: string, format: date-time }, { type: 'null' }]
+        error:
+          anyOf:
+            - type: object
+              required: [code, message, retryable]
+              properties:
+                code: { type: string }
+                message: { type: string }
+                retryable: { type: boolean, const: false }
+            - type: 'null'
+    GenerationJobResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, generationJobId, status, projectState, scenes, progress, maxPaidOperations, error]
+      properties:
+        projectId: { type: string, format: uuid }
+        generationJobId: { type: string, format: uuid }
+        status: { type: string, enum: [processing, assembling, failed] }
+        projectState:
+          type: string
+          description: Latest signed state. Replace the previous token, keep it opaque, and never show it to the user.
+        scenes:
+          type: object
+          additionalProperties: false
+          required: [total, completed, processing, pending]
+          properties:
+            total: { type: integer }
+            completed: { type: integer }
+            processing: { type: integer }
+            pending: { type: integer }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        maxPaidOperations:
+          type: integer
+          minimum: 1
+          description: Maximum remaining paid generation POSTs authorized for this exact signed plan.
+        error:
+          anyOf:
+            - type: object
+              additionalProperties: false
+              required: [code, message]
+              properties:
+                code: { type: string }
+                message: { type: string }
+            - type: 'null'
+    RenderJobResponse:
+      type: object
+      additionalProperties: false
+      required: [projectId, renderJobId, status, projectState, downloadUrl, outputExpiresAt, error]
+      properties:
+        projectId: { type: string, format: uuid }
+        renderJobId: { type: string, format: uuid }
+        status: { type: string, enum: [processing, completed, failed] }
+        projectState:
+          description: Latest signed state when completed; replace the previous token and never show it to the user.
+          anyOf: [{ type: string }, { type: 'null' }]
+        downloadUrl:
+          description: Temporary browser-download URL present only when completed.
+          anyOf: [{ type: string, format: uri }, { type: 'null' }]
+        outputExpiresAt:
+          anyOf: [{ type: string, format: date-time }, { type: 'null' }]
+        error:
+          anyOf:
+            - type: object
+              additionalProperties: false
+              required: [code, message]
+              properties:
+                code: { type: string }
+                message: { type: string }
+            - type: 'null'
     GenerateVideoRequest:
       type: object
       additionalProperties: false
@@ -177,38 +499,35 @@ components:
           type: string
           minLength: 1
           maxLength: 10000
-          description: Video prompt preserving the user's intent.
         model:
           type: string
-          description: Select a compatible model, using getVideoModels when capabilities are uncertain.
-          enum: [veo-3.1, veo-3.1-fast, veo-3.1-lite, veo-2, omni-flash, grok-3, grok-lower, seedance-2, seedance-2-omni, seedance-2-mini, seedance-2-5-omni, flux-3, minimax-h3, kling-video-3-0, kling-video-2-6, kling-video-o1, kling-video-2-5, kling-video-2-1-10s, kling-video-2-1-5s, kling-video-1-6-10s, kling-video-1-6-5s]
+          description: Use getVideoModels to select a supported model and compatible parameters.
+          enum: [veo-3.1, veo-3.1-fast, veo-2, veo-3.1-lite, omni-flash, grok-3, grok-lower, seedance-2, seedance-2-omni, seedance-2-mini, seedance-2-5-omni, flux-3, minimax-h3, kling-video-3-0, kling-video-2-6, kling-video-o1, kling-video-2-5, kling-video-2-1-10s, kling-video-2-1-5s, kling-video-1-6-10s, kling-video-1-6-5s]
         duration:
           type: integer
           minimum: 3
           maximum: 30
-          description: Model-specific duration. Omit to use the selected model default.
+          description: Model-specific. Omit to use the selected model default.
         resolution:
           type: string
           enum: ["480p", "720p", "1080p"]
-          description: Model-specific resolution. Some models derive it from mode or reject this field.
+          description: Model-specific. Some models derive resolution from mode or do not accept this field.
         aspect_ratio:
           type: string
-          description: Model-specific aspect ratio. Confirm accepted values with getVideoModels.
+          description: Model-specific. Use getVideoModels for accepted values.
         mode_image:
           type: string
           enum: [frame, ingredient]
-          description: Veo reference-image mode.
         ref_images:
           type: array
+          description: HTTP(S) image URLs, in start/end-frame order when mode_image is frame.
           maxItems: 14
-          description: Public HTTP or HTTPS image URLs. Respect the selected model's limit and ordering rules.
           items:
             type: string
             format: uri
-            pattern: '^https?://'
         mode:
           type: string
-          description: Optional model-specific generation or quality mode.
+          description: Optional model-specific quality or generation mode.
         skip_audio:
           type: boolean
           description: Grok-only option. True requests a silent video.
@@ -221,14 +540,11 @@ components:
           type: string
           minLength: 1
           maxLength: 10000
-          description: Instructions for continuing the existing video.
         model:
           type: string
-          description: Original compatible model with supportsExtend=true in getVideoModels.
         source_uuid:
           type: string
           format: uuid
-          description: UUID of the existing SnapGen generation to extend.
     StoryboardRequest:
       type: object
       additionalProperties: false
@@ -238,12 +554,10 @@ components:
           type: string
           enum: [grok-video, grok-3]
           default: grok-video
-          description: Storyboard-specific ID. grok-video is canonical and grok-3 is its documented alias. grok-lower is not supported.
         scenes:
           type: array
           minItems: 2
           maxItems: 10
-          description: Ordered scenes. Combined duration must not exceed 45 seconds.
           items:
             type: object
             additionalProperties: false
@@ -251,8 +565,6 @@ components:
             properties:
               prompt:
                 type: string
-                minLength: 1
-                maxLength: 10000
               duration:
                 type: integer
                 enum: [6, 10]
@@ -266,7 +578,6 @@ components:
           default: "480p"
     VideoGeneration:
       type: object
-      additionalProperties: false
       required: [uuid, status, provider, model]
       properties:
         uuid:
@@ -274,15 +585,14 @@ components:
           format: uuid
         status:
           type: string
-          enum: [processing]
+          const: processing
         provider:
           type: string
-          enum: [snapgen]
+          const: snapgen
         model:
           type: string
     VideoGenerationStatus:
       type: object
-      additionalProperties: false
       required: [uuid, status, progress, videoUrl, provider]
       properties:
         uuid:
@@ -299,15 +609,14 @@ components:
           anyOf:
             - type: string
               format: uri
-            - type: "null"
+            - type: 'null'
         provider:
           type: string
-          enum: [snapgen]
+          const: snapgen
         error:
           type: string
     VideoOperation:
       type: object
-      additionalProperties: false
       required: [uuid, status, provider, operation, model]
       properties:
         uuid:
@@ -315,10 +624,10 @@ components:
           format: uuid
         status:
           type: string
-          enum: [processing]
+          const: processing
         provider:
           type: string
-          enum: [snapgen]
+          const: snapgen
         operation:
           type: string
           enum: [extend, storyboard]
@@ -326,14 +635,12 @@ components:
           type: string
     VideoModel:
       type: object
-      additionalProperties: false
       required: [id, family, supportsTextToVideo, supportsImageToVideo, supportsExtend, resolutions, aspectRatios, durations, modes, maxReferenceImages]
       properties:
         id:
           type: string
         family:
           type: string
-          enum: [veo, grok, seedance, flux, minimax, kling]
         supportsTextToVideo:
           type: boolean
         supportsImageToVideo:
@@ -342,34 +649,15 @@ components:
           type: boolean
         resolutions:
           type: array
-          items:
-            type: string
+          items: { type: string }
         aspectRatios:
           type: array
-          items:
-            type: string
-        durations:
-          description: Either fixed allowed durations or an inclusive minimum and maximum range.
-          anyOf:
-            - type: array
-              items:
-                type: integer
-            - $ref: '#/components/schemas/DurationRange'
+          items: { type: string }
+        durations: {}
         modes:
           type: array
-          items:
-            type: string
+          items: { type: string }
         maxReferenceImages:
-          type: integer
-          minimum: 0
-    DurationRange:
-      type: object
-      additionalProperties: false
-      required: [min, max]
-      properties:
-        min:
-          type: integer
-        max:
           type: integer
     Error:
       type: object
@@ -377,12 +665,9 @@ components:
       properties:
         error:
           type: string
-        code:
-          type: string
-        message:
-          type: string
         status:
           type: integer
+        details: {}
   responses:
     Unauthorized:
       description: Missing or invalid middleware API key
@@ -390,14 +675,16 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+          example:
+            error: Unauthorized
     ValidationError:
-      description: Invalid request or unsupported model capability
+      description: Invalid request
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-    ProviderError:
-      description: Error returned while calling the video provider
+    SnapGenError:
+      description: Error returned while calling SnapGen
       content:
         application/json:
           schema:

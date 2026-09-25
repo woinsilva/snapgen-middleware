@@ -4,6 +4,7 @@ import type { EphemeralOutputStore } from './project-output-store.js';
 import type { StatelessProjectService } from './project.service.js';
 import type { RenderJobManager } from './render-job.manager.js';
 import type { GenerationJobManager } from './generation-job.manager.js';
+import type { EphemeralContinuityFrameStore } from './project-continuity-frame-store.js';
 
 export function createProjectRouter(service?: StatelessProjectService, renderJobs?: RenderJobManager, generationJobs?: GenerationJobManager): Router {
   const router = Router();
@@ -23,5 +24,12 @@ export function createProjectOutputRouter(service?: StatelessProjectService, out
   const router = Router();
   const controller = createProjectController(service, outputStore);
   router.get('/:projectId', controller.output);
+  return router;
+}
+
+export function createProjectFrameRouter(service?: StatelessProjectService, frameStore?: EphemeralContinuityFrameStore): Router {
+  const router = Router();
+  const controller = createProjectController(service, undefined, undefined, undefined, frameStore);
+  router.get('/:projectId', controller.frame);
   return router;
 }

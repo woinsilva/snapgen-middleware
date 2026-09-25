@@ -8,7 +8,7 @@ const profiles: ProjectModelProfile[] = [
     supportsLongProject: true,
     supportsExtend: true,
     extendChainValidated: false,
-    generationStrategy: 'independent',
+    generationStrategy: 'last-frame-chained',
     allowedResolutions: ['720p', '1080p'],
     allowedAspectRatios: ['16:9'],
   },

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SnapGenError } from '../src/errors.js';
 import type { VideoProvider } from '../src/providers/video.provider.js';
-import { projectInput, serviceWith } from './v3.helpers.js';
+import { projectInput, serviceWith, testSceneReferences } from './v3.helpers.js';
 import { StatelessProjectService } from '../src/projects/project.service.js';
 import { testTokens } from './v3.helpers.js';
 
@@ -52,6 +52,11 @@ describe('V3 stateless command/query orchestration', () => {
     expect(state.scenes.slice(2).every((scene) => scene.status === 'pending')).toBe(true);
     expect(state.paidOperations).toBe(2);
     expect(mock.generateVideo).toHaveBeenCalledTimes(2);
+    expect(mock.generateVideo).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      mode_image: 'frame',
+      ref_images: ['https://middleware.example/continuity/scene-1.png'],
+      prompt: expect.stringContaining('exact final frame of the previous scene'),
+    }), 'start-scene-2');
     expect(mock.getVideo).toHaveBeenCalledTimes(3);
 
     const tampered = `${latest.slice(0, -1)}${latest.endsWith('x') ? 'y' : 'x'}`;
@@ -67,12 +72,13 @@ describe('V3 stateless command/query orchestration', () => {
     expect(mock.generateVideo).not.toHaveBeenCalled();
   });
 
-  it('moves pending to processing with exactly one independent generation POST', async () => {
+  it('moves the first scene to processing without a reference frame', async () => {
     const mock = provider();
     const { service } = serviceWith(mock);
     const response = await service.advance(service.start(projectInput()).projectState, 'request-1');
     const state = service.verify(response.projectState);
-    expect(state.generationStrategy).toBe('independent');
+    expect(state.generationStrategy).toBe('last-frame-chained');
+    expect(mock.generateVideo).toHaveBeenCalledWith(expect.objectContaining({ ref_images: [] }), 'request-1');
     expect(mock.generateVideo).toHaveBeenCalledTimes(1);
     expect(mock.extendVideo).not.toHaveBeenCalled();
     expect(state.scenes[0]).toMatchObject({ status: 'processing', attemptNumber: 1, operation: 'generate', snapgenUuid: uuid });
@@ -260,7 +266,7 @@ describe('V3 stateless command/query orchestration', () => {
     });
     const renderer = { render: vi.fn(async () => ({ handle: '7d9f6f50-18a1-4ff0-bd1f-5a83639928ad', expiresAt: '2026-09-14T12:15:00.000Z' })) };
     const now = new Date('2026-09-14T12:00:00.000Z');
-    const service = new StatelessProjectService(testTokens(now), mock, renderer, 86_400, () => now);
+    const service = new StatelessProjectService(testTokens(now), mock, renderer, 86_400, () => now, testSceneReferences);
     let response = service.start(projectInput());
     for (let scene = 0; scene < 9; scene += 1) {
       response = await service.advance(response.projectState, `submit-${scene}`);
@@ -270,7 +276,7 @@ describe('V3 stateless command/query orchestration', () => {
     expect(renderer.render).not.toHaveBeenCalled();
     response = await service.render(response.projectState, 'render-request');
     expect(response.status).toBe('completed');
-    expect(service.verify(response.projectState).generationStrategy).toBe('independent');
+    expect(service.verify(response.projectState).generationStrategy).toBe('last-frame-chained');
     expect(response.progress).toBe(100);
     expect(response.downloadUrl).toContain('/video/projects/output/');
     expect(renderer.render).toHaveBeenCalledTimes(1);

@@ -19,7 +19,7 @@ describe('V3 Project State Token', () => {
     const started = service.start(projectInput());
     const state = service.verify(started.projectState);
     expect(state.projectId).toBe(started.projectId);
-    expect(state).toMatchObject({ schemaVersion: 2, generationStrategy: 'independent' });
+    expect(state).toMatchObject({ schemaVersion: 2, generationStrategy: 'last-frame-chained' });
     expect(started.projectState.startsWith('pst1.')).toBe(true);
   });
 
@@ -95,6 +95,16 @@ describe('V3 Project State Token', () => {
     const access = tokens.signOutputAccess(projectId, output);
     expect(tokens.verifyOutputAccess(access, projectId)).toEqual(output);
     expect(() => tokens.verifyOutputAccess(access, '60c8481d-3089-402c-b948-3ca7c9843891')).toThrow();
+  });
+
+  it('signs continuity-frame access with a separate purpose-bound token', () => {
+    const tokens = testTokens();
+    const projectId = '550e8400-e29b-41d4-a716-446655440000';
+    const frame = { handle: '7d9f6f50-18a1-4ff0-bd1f-5a83639928ad', expiresAt: '2026-09-14T12:15:00.000Z' };
+    const access = tokens.signFrameAccess(projectId, frame);
+    expect(access).toMatch(/^psf1\./);
+    expect(tokens.verifyFrameAccess(access, projectId)).toEqual(frame);
+    expect(() => tokens.verifyOutputAccess(access, projectId)).toThrow();
   });
 
   it('rejects a correctly signed payload with an unsupported schema version', () => {

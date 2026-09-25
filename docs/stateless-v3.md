@@ -6,7 +6,7 @@ V3 orchestrates long videos without a database, persistent queue, external worke
 
 1. `POST /video/projects/start` validates the complete plan and returns a signed Project State Token. It never calls SnapGen.
 2. `POST /video/projects/generation` is the single potentially paid V3.1 command. It reserves the next scene in signed schema-2 state, creates one instance-local generation job, returns `202`, and authorizes at most the reported `maxPaidOperations` for the exact signed plan.
-3. The worker submits and polls exactly one scene at a time. It never starts scene N+1 until scene N is definitively completed. Provider POSTs have no automatic retry; status GETs use exponential delays from 5 to 30 seconds, at most 120 polls per scene, bounded by the whole-job TTL.
+3. The worker submits and polls exactly one scene at a time. It never starts scene N+1 until scene N is definitively completed. Before submitting N+1, it downloads N, extracts its final frame, exposes that PNG through a short-lived signed URL, and sends it as the single `mode_image=frame` reference. Provider POSTs have no automatic retry; status GETs use exponential delays from 5 to 30 seconds, at most 120 polls per scene, bounded by the whole-job TTL.
 4. `GET /video/projects/{projectId}/generation/{generationJobId}` returns only the current job snapshot. It never starts a job or submits an independent generation.
 5. After every response containing state, the client must discard the previous token and retain the exact replacement.
 6. When every scene is complete, the generation job stops at `assembling`. It never starts rendering.
@@ -14,7 +14,7 @@ V3 orchestrates long videos without a database, persistent queue, external worke
 
 `POST /video/projects/advance`, `/status`, and `/continue` remain at runtime for backward compatibility and diagnostics. They are not exposed in the V3.1 Custom GPT contract. While a whole-project job exists in the current process, manual `advance` and legacy `continue` return `GENERATION_JOB_ACTIVE`, preventing mixed orchestration.
 
-Only `veo-3.1-fast` is enabled initially. It uses independent eight-second generations. Although the V2 capability says that Extend exists, the real chaining test did not complete successfully, so `extendChainValidated` is `false` and V3 never invokes Extend automatically.
+Only `veo-3.1-fast` is enabled initially. It uses eight-second generations with `last-frame-chained` continuity. This is image-to-video chaining, not provider Extend: scene 1 is text-to-video and every later scene begins from the exact extracted final frame of its predecessor. `extendChainValidated` remains `false`, so V3 still never invokes Extend automatically and the video provider implementation is unchanged.
 
 ## Project State Token
 
@@ -24,7 +24,7 @@ The format is:
 pst1.<base64url(deflateRaw(JSON))>.<base64url(HMAC-SHA256)>
 ```
 
-The signature covers the prefix and compressed payload and is compared in constant time. Payload and signature must use canonical unpadded Base64URL; alternate spellings are rejected even when they decode to the same bytes. The payload contains project parameters, the selected `generationStrategy`, the visual bible, scenes, UUIDs, states, budget counters, timestamps, schema version, and monotonic token version. It contains no API keys, provider credentials, or provider media URLs. The current state schema requires `generationStrategy: "independent"`; `advance`, `status`, legacy `continue`, and `render` reject missing or unsupported strategies when they verify the token.
+The signature covers the prefix and compressed payload and is compared in constant time. Payload and signature must use canonical unpadded Base64URL; alternate spellings are rejected even when they decode to the same bytes. The payload contains project parameters, the selected `generationStrategy`, the visual bible, scenes, UUIDs, states, budget counters, timestamps, schema version, and monotonic token version. It contains no API keys, provider credentials, or provider media URLs. New projects use `generationStrategy: "last-frame-chained"`; `"independent"` remains schema-valid only so already-issued schema-2 tokens can still be completed safely. `advance`, `status`, legacy `continue`, and `render` reject missing or unsupported strategies when they verify the token.
 
 The state schema version is `2`. It was incremented when `generationStrategy` became a required signed field because this intentionally makes the earlier test-only schema-1 tokens invalid. The `pst1` envelope prefix did not change because compression and HMAC framing remain the same. No paid V3 projects existed when this compatibility break was introduced.
 
@@ -66,7 +66,9 @@ V3 stores only SnapGen UUIDs and asks the history endpoint for a current URL imm
 
 Media download requires HTTPS, disallows embedded credentials and local/private/reserved destinations, revalidates redirects, optionally enforces `SNAPGEN_MEDIA_ALLOWED_HOSTS`, limits redirects, bytes, and time, validates content type, and removes partial files. Query strings from provider URLs are never logged.
 
-`ffprobe` verifies a video stream. Each clip is normalized to H.264, `yuv420p`, 30 FPS, requested dimensions, and AAC 48 kHz stereo. A silent audio stream is added when needed. FFmpeg concatenates normalized clips and trims/re-encodes to the requested duration with MP4 `faststart`.
+`ffprobe` verifies a video stream. FFmpeg also extracts the final frame used by the next scene. Each clip is normalized to H.264, `yuv420p`, 30 FPS, requested dimensions, and AAC 48 kHz stereo. A silent audio stream is added when needed. FFmpeg concatenates normalized clips and stream-copies the already normalized result while trimming it to the requested duration with MP4 `faststart`.
+
+Continuity frames live in a separate temporary directory and are addressed only by generated UUID handles. Their `psf1` HMAC access token is purpose-bound, project-bound, and expiry-bound, so it cannot be reused as a final-output token. `PROJECT_CONTINUITY_FRAME_TTL_SECONDS` defaults to 3,600 seconds. A restart, expiry, or missing prior video fails continuity before the next paid provider submission.
 
 ## Ephemeral output
 

@@ -14,6 +14,9 @@ Anterior:
 - GET /video/projects/output/{projectId} exigia x-api-key.
 
 Novo V3.1:
+- Novos projetos usam `last-frame-chained`: o último quadro real de cada cena é extraído e enviado como o único frame inicial da cena seguinte; o provider SnapGen e o fluxo de geração pago não foram substituídos.
+- Frames de continuidade usam arquivo temporário separado e URL `psf1` assinada, vinculada ao projeto e com expiração. Falha de download/extração interrompe o job antes do próximo POST pago.
+- O planejamento do GPT agora exige arco causal de começo, meio, clímax e fim, além de handoff explícito entre ações. Para 61s, a oitava cena é planejada com 5s úteis antes do corte.
 - POST /video/projects/generation cria ou devolve o único generation job do projeto/plano na instância e explicita maxPaidOperations restante.
 - GET /video/projects/{projectId}/generation/{generationJobId} consulta o snapshot mais recente sem iniciar outro job.
 - O worker reserva a próxima cena no state assinado antes do POST, gera estritamente em sequência e nunca repete POST ambíguo.
@@ -53,6 +56,7 @@ SEGURANÇA
 ARTEFATOS DO CUSTOM GPT
 
 - OPENAPI-FINAL.yaml: contrato V1/V2/V3 com somente Actions textuais/JSON.
+- openapi-gpt.yaml: contrato canônico sincronizado com OPENAPI-FINAL.yaml; teste impede regressão para a antiga superfície V2 de 6 Actions.
 - INSTRUCTIONS-FINAL.txt: workflow V3.1 com uma autorização para `startVideoProjectGeneration`, consulta `getVideoProjectGenerationStatus`, compatibilidade V1/V2 secundária, render assíncrono e output temporário.
 - GPT-BUILDER-CHECKLIST.txt: atualização manual e validação no Builder.
 - GPT-PREVIEW-TESTS.txt: testes gratuitos e testes pagos futuros separados.
@@ -101,6 +105,7 @@ VALIDAÇÃO
 - download: acesso público assinado, adulteração, expiração, projeto incorreto, output ausente e headers seguros cobertos.
 - OpenAPI principal e OpenAPI do GPT: válidos no Redocly, sem erros; somente avisos editoriais não bloqueantes de licença/4xx público.
 - operationIds: 11 e únicos no artefato do GPT.
+- disponibilidade no GPT: requer modelo não-Pro compatível com Actions e, em workspace administrado, allowlist que permita snapgen-middleware.onrender.com.
 - endpoint video/mp4: ausente do artefato do GPT.
 - valores 16:9, 720p e 1080p tratados como strings.
 - nenhuma chamada SnapGen real e nenhuma operação paga executada.

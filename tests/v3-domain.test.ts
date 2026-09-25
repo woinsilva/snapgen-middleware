@@ -27,10 +27,10 @@ describe('V3 pure project domain', () => {
     expect(calculateProjectBudget(9)).toEqual({ maxPaidOperations: 9, maxAttemptsPerScene: 1, automaticPaidRetries: 0 });
   });
 
-  it('exposes only the independently generated Veo profile', () => {
+  it('exposes only the last-frame-chained Veo profile', () => {
     expect(projectModelProfileRegistry.list()).toHaveLength(1);
     expect(projectModelProfileRegistry.get('veo-3.1-fast')).toMatchObject({
-      segmentDurationSeconds: 8, supportsExtend: true, extendChainValidated: false, generationStrategy: 'independent',
+      segmentDurationSeconds: 8, supportsExtend: true, extendChainValidated: false, generationStrategy: 'last-frame-chained',
     });
     expect(() => projectModelProfileRegistry.get('grok-3')).toThrow();
   });

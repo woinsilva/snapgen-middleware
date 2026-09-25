@@ -14,7 +14,7 @@ import { createVideoRouter } from './routes/video.routes.js';
 import { SnapGenService } from './services/snapgen.service.js';
 import type { VideoProvider } from './providers/video.provider.js';
 import { createLogger } from './utils/logger.js';
-import { createProjectOutputRouter, createProjectRouter } from './projects/project.routes.js';
+import { createProjectFrameRouter, createProjectOutputRouter, createProjectRouter } from './projects/project.routes.js';
 import { ProjectStateTokenService } from './projects/project-state-token.js';
 import { StatelessProjectService } from './projects/project.service.js';
 import { EphemeralOutputStore } from './projects/project-output-store.js';
@@ -23,6 +23,8 @@ import { FfmpegMediaProcessor } from './media/ffmpeg-media-processor.js';
 import { EphemeralProjectRenderer } from './projects/ephemeral-project-renderer.js';
 import { RenderJobManager } from './projects/render-job.manager.js';
 import { GenerationJobManager } from './projects/generation-job.manager.js';
+import { EphemeralContinuityFrameStore } from './projects/project-continuity-frame-store.js';
+import { LastFrameContinuityService } from './projects/last-frame-continuity.service.js';
 
 function corsOrigins(value: string): true | string[] {
   if (value.trim() === '*') return true;
@@ -40,7 +42,9 @@ export function createApp(
   const logger = createLogger(env.LOG_LEVEL);
   const provider = service ?? new SnapGenService(env, fetch, logger);
   const outputStore = suppliedOutputStore ?? new EphemeralOutputStore();
+  const frameStore = new EphemeralContinuityFrameStore();
   const outputTtlSeconds = env.PROJECT_OUTPUT_TTL_SECONDS ?? 900;
+  const publicBaseUrl = env.PUBLIC_BASE_URL ?? env.RENDER_EXTERNAL_URL ?? `http://localhost:${env.PORT}`;
   const projectService = suppliedProjectService ?? (env.PROJECT_STATE_SECRET ? (() => {
     const tokens = new ProjectStateTokenService(
       env.PROJECT_STATE_SECRET,
@@ -54,17 +58,26 @@ export function createApp(
       maxRedirects: 2,
       allowedHosts,
     });
+    const processor = new FfmpegMediaProcessor();
     const renderer = new EphemeralProjectRenderer(
       provider,
       downloader,
-      new FfmpegMediaProcessor(),
+      processor,
       outputStore,
       outputTtlSeconds,
       logger,
     );
-    return new StatelessProjectService(tokens, provider, renderer, env.PROJECT_STATE_TOKEN_TTL_SECONDS ?? 2_592_000);
+    const continuity = new LastFrameContinuityService(
+      provider,
+      downloader,
+      processor,
+      frameStore,
+      tokens,
+      publicBaseUrl,
+      env.PROJECT_CONTINUITY_FRAME_TTL_SECONDS ?? 3_600,
+    );
+    return new StatelessProjectService(tokens, provider, renderer, env.PROJECT_STATE_TOKEN_TTL_SECONDS ?? 2_592_000, undefined, continuity);
   })() : undefined);
-  const publicBaseUrl = env.PUBLIC_BASE_URL ?? env.RENDER_EXTERNAL_URL ?? `http://localhost:${env.PORT}`;
   const renderJobs = projectService
     ? new RenderJobManager(
       projectService,
@@ -97,6 +110,7 @@ export function createApp(
   app.use('/privacy', privacyRouter);
   app.use('/video/models', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), modelsRouter);
   app.use('/video/projects/output', videoRateLimit, createProjectOutputRouter(projectService, outputStore));
+  app.use('/video/projects/frames', videoRateLimit, createProjectFrameRouter(projectService, frameStore));
   app.use('/video/projects', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), createProjectRouter(projectService, renderJobs, generationJobs));
   app.use('/video', videoRateLimit, createAuthMiddleware(env.MIDDLEWARE_API_KEY), createVideoRouter(provider));
   app.locals.jobLifecycle = {

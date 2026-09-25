@@ -51,6 +51,11 @@ export class FfmpegMediaProcessor {
     await command('ffmpeg', args, 600_000, signal);
   }
 
+  async extractFinalFrame(input: string, output: string, signal?: AbortSignal): Promise<void> {
+    await this.probe(input, signal);
+    await command('ffmpeg', ['-y', '-sseof', '-0.1', '-i', input, '-frames:v', '1', '-vf', 'format=rgb24', output], 600_000, signal);
+  }
+
   async concatenate(inputs: string[], manifest: string, concatenated: string, signal?: AbortSignal): Promise<void> {
     const content = inputs.map((path) => `file '${path.replaceAll("'", "'\\''")}'`).join('\n');
     await writeFile(manifest, content, 'utf8');
@@ -58,7 +63,10 @@ export class FfmpegMediaProcessor {
   }
 
   async finalize(input: string, output: string, targetDuration: number, signal?: AbortSignal): Promise<void> {
-    await command('ffmpeg', ['-y', '-i', input, '-t', String(targetDuration), '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-b:a', '192k', '-movflags', '+faststart', output], 600_000, signal);
+    // Every segment was already normalized to the same H.264/AAC profile. Re-encoding the
+    // complete project here is redundant and can exceed the CPU budget of small runtimes.
+    // A remux preserves those normalized streams and only trims the tail to target duration.
+    await command('ffmpeg', ['-y', '-i', input, '-t', String(targetDuration), '-c', 'copy', '-movflags', '+faststart', output], 600_000, signal);
     const probe = await this.probe(output, signal);
     const duration = Number(probe.format?.duration);
     if (!Number.isFinite(duration) || Math.abs(duration - targetDuration) > 0.25) throw new ApiError(502, 'INVALID_FINAL_DURATION', 'Rendered video duration is outside the allowed tolerance.');

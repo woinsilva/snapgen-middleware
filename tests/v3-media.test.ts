@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { isPrivateAddress, SecureMediaDownloader } from '../src/media/secure-media-downloader.js';
 import { FfmpegMediaProcessor } from '../src/media/ffmpeg-media-processor.js';
 import { EphemeralOutputStore } from '../src/projects/project-output-store.js';
+import { EphemeralContinuityFrameStore } from '../src/projects/project-continuity-frame-store.js';
 import { writeFile } from 'node:fs/promises';
 
 describe('V3 secure media handling', () => {
@@ -59,6 +60,17 @@ describe('V3 secure media handling', () => {
       await expect(store.resolve(output)).rejects.toThrow(/expired|lost|cleaned/i);
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
+
+  it('stores continuity frames separately from final video outputs', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'v3-frame-test-'));
+    const source = join(directory, 'source.png');
+    try {
+      await writeFile(source, new Uint8Array([137, 80, 78, 71]));
+      const store = new EphemeralContinuityFrameStore(join(directory, 'frames'), () => new Date('2026-09-14T12:00:00.000Z'));
+      const frame = await store.store(source, 60);
+      expect(await store.resolve(frame)).toBe(join(directory, 'frames', `${frame.handle}.png`));
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
 });
 
 const ffmpegAvailable = spawnSync('ffmpeg', ['-version'], { windowsHide: true }).status === 0;
@@ -76,6 +88,9 @@ describe.skipIf(!ffmpegAvailable)('V3 FFmpeg pipeline', () => {
         const inputProbe = await processor.probe(source);
         expect(inputProbe.streams?.some((stream) => stream.codec_type === 'video')).toBe(true);
       }
+      const finalFrame = join(directory, 'final-frame.png');
+      await processor.extractFinalFrame(sources[0]!, finalFrame);
+      expect((await stat(finalFrame)).size).toBeGreaterThan(0);
       const normalized = [join(directory, 'n1.mp4'), join(directory, 'n2.mp4')];
       await processor.normalize(sources[0]!, normalized[0]!, '720p', 1);
       await processor.normalize(sources[1]!, normalized[1]!, '720p', 1);
@@ -86,7 +101,7 @@ describe.skipIf(!ffmpegAvailable)('V3 FFmpeg pipeline', () => {
       const probe = await processor.probe(final);
       const video = probe.streams?.find((stream) => stream.codec_type === 'video');
       const audio = probe.streams?.find((stream) => stream.codec_type === 'audio');
-      expect(Number(probe.format?.duration)).toBeCloseTo(1.5, 1);
+      expect(Math.abs(Number(probe.format?.duration) - 1.5)).toBeLessThanOrEqual(0.25);
       expect(video).toMatchObject({ codec_name: 'h264', width: 1280, height: 720 });
       expect(audio?.codec_name).toBe('aac');
       expect((await stat(final)).size).toBeGreaterThan(0);

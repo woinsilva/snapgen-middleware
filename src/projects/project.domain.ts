@@ -4,7 +4,8 @@ export type VideoProjectStatus = typeof projectStatuses[number];
 export const sceneStatuses = ['pending', 'submitting', 'processing', 'completed', 'failed', 'ambiguous'] as const;
 export type VideoProjectSceneStatus = typeof sceneStatuses[number];
 
-export const projectGenerationStrategies = ['independent'] as const;
+// Keep `independent` valid so already-issued schema-v2 tokens remain usable.
+export const projectGenerationStrategies = ['independent', 'last-frame-chained'] as const;
 export type ProjectGenerationStrategy = typeof projectGenerationStrategies[number];
 
 export interface VisualBibleCharacter { id: string; description: string }

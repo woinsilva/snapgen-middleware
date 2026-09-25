@@ -1,6 +1,18 @@
 GPT PREVIEW TESTS — V3.1 WHOLE-PROJECT GENERATION JOB
 
+TESTE DE COERÊNCIA — PLANO DE 61 SEGUNDOS
+Prompt: "Planeje um vídeo infantil de 61 segundos na floresta sobre um animal perdido ajudando outro. Ainda não gere."
+Esperado:
+1. Planeja exatamente 8 cenas em inglês, com começo, meio, clímax e fim.
+2. Cada cena continua literalmente a ação/quadro final da anterior, sem teletransporte ou reinício.
+3. A cena 8 coloca a resolução nos primeiros 4 segundos, pois apenas 5 dos 8 segundos gerados aparecem no vídeo de 61s.
+4. Não inventa URLs de frames: explica que o runtime encadeia automaticamente o quadro final real.
+
 FASE A — GRATUITA, EXECUTAR PRIMEIRO
+
+TESTE 0 — DISPONIBILIDADE DAS ACTIONS
+No Preview, use um modelo não-Pro compatível com Actions e peça “Verifique se o middleware está online.”
+Esperado: healthCheck disponível e resposta status=ok. Em workspace administrado, se a Action não estiver disponível, confirmar a allowlist de snapgen-middleware.onrender.com antes de investigar o provider.
 
 TESTE 1 — PLANEJAMENTO E START
 Prompt: “Planeje um vídeo de 70 segundos com veo-3.1-fast, 16:9 e 1080p. Crie apenas o projeto; não gere cenas.”

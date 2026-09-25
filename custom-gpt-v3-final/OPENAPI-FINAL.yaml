@@ -365,8 +365,16 @@ components:
       required: [sequence, prompt]
       properties:
         sequence: { type: integer, minimum: 1 }
-        prompt: { type: string, minLength: 1, maxLength: 4000 }
-        continuityInstructions: { type: string, minLength: 1, maxLength: 1500 }
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: One causal 8-second story beat. Repeat immutable character traits and end on a clear action/frame that prepares the next scene.
+        continuityInstructions:
+          type: string
+          minLength: 1
+          maxLength: 1500
+          description: Describe exactly what carries over from the previous final frame and how the action continues without resetting.
     StartProjectRequest:
       type: object
       additionalProperties: false
@@ -382,7 +390,7 @@ components:
           type: array
           minItems: 8
           maxItems: 23
-          description: Must contain exactly ceil(duration / 8) scenes, sequentially numbered from 1.
+          description: Must contain exactly ceil(duration / 8) scenes, sequentially numbered from 1, with a causal beginning, middle, climax, and resolution. Runtime automatically uses each scene's real final frame as the next scene's initial frame.
           items: { $ref: '#/components/schemas/ProjectSceneInput' }
     ProjectStateRequest:
       type: object

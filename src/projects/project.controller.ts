@@ -5,9 +5,10 @@ import type { StatelessProjectService } from './project.service.js';
 import type { EphemeralOutputStore } from './project-output-store.js';
 import type { RenderJobManager } from './render-job.manager.js';
 import type { GenerationJobManager } from './generation-job.manager.js';
+import type { EphemeralContinuityFrameStore } from './project-continuity-frame-store.js';
 
-export function createProjectController(service?: StatelessProjectService, outputStore?: EphemeralOutputStore, renderJobs?: RenderJobManager, generationJobs?: GenerationJobManager): {
-  start: RequestHandler; advance: RequestHandler; status: RequestHandler; continue: RequestHandler; startGeneration: RequestHandler; generationStatus: RequestHandler; render: RequestHandler; renderStatus: RequestHandler; output: RequestHandler;
+export function createProjectController(service?: StatelessProjectService, outputStore?: EphemeralOutputStore, renderJobs?: RenderJobManager, generationJobs?: GenerationJobManager, frameStore?: EphemeralContinuityFrameStore): {
+  start: RequestHandler; advance: RequestHandler; status: RequestHandler; continue: RequestHandler; startGeneration: RequestHandler; generationStatus: RequestHandler; render: RequestHandler; renderStatus: RequestHandler; output: RequestHandler; frame: RequestHandler;
 } {
   const requiredService = () => {
     if (!service) throw new ApiError(503, 'V3_NOT_CONFIGURED', 'Stateless V3 requires PROJECT_STATE_SECRET.');
@@ -90,6 +91,20 @@ export function createProjectController(service?: StatelessProjectService, outpu
         response.setHeader('Cache-Control', 'private, no-store');
         response.setHeader('Referrer-Policy', 'no-referrer');
         response.download(path, `${projectId}.mp4`, (error) => { if (error) next(error); });
+      } catch (error) { next(error); }
+    },
+    frame: async (request, response, next) => {
+      try {
+        const projectId = projectIdSchema.parse(request.params.projectId);
+        response.locals.projectId = projectId;
+        const token = request.query.access;
+        if (typeof token !== 'string') throw new ApiError(400, 'FRAME_ACCESS_REQUIRED', 'access query parameter is required.');
+        const frame = requiredService().authorizeFrame(projectId, token);
+        if (!frameStore) throw new ApiError(503, 'CONTINUITY_FRAME_UNAVAILABLE', 'Ephemeral continuity frames are unavailable.');
+        const path = await frameStore.resolve(frame);
+        response.setHeader('Cache-Control', 'private, no-store');
+        response.setHeader('Referrer-Policy', 'no-referrer');
+        response.type('png').sendFile(path, (error) => { if (error) next(error); });
       } catch (error) { next(error); }
     },
   };

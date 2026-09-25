@@ -1,4 +1,4 @@
-# SnapGen Middleware V2
+# SnapGen Middleware V3.1
 
 Middleware stateless em Node.js + TypeScript para integrar uma Custom GPT Action aos modelos de vídeo do SnapGen. A API pública recebe JSON, aplica validação específica por modelo e converte cada operação para o formato multipart documentado pelo SnapGen.
 
@@ -168,6 +168,7 @@ NODE_ENV=development
 LOG_LEVEL=info
 PROJECT_STATE_SECRET=
 PROJECT_OUTPUT_TTL_SECONDS=900
+PROJECT_CONTINUITY_FRAME_TTL_SECONDS=3600
 PROJECT_RENDER_JOB_TTL_SECONDS=3600
 PROJECT_RENDER_MAX_EXECUTION_SECONDS=43200
 PROJECT_GENERATION_JOB_TTL_SECONDS=14400
@@ -180,7 +181,7 @@ O `.env` real é ignorado pelo Git e pelo contexto Docker. Nunca configure `SNAP
 
 ## Projetos de vídeo stateless (V3)
 
-A V3.1 usa `/video/projects/start`, um único comando potencialmente pago `/video/projects/generation`, consulta gratuita em `/video/projects/{projectId}/generation/{generationJobId}`, render assíncrono e download temporário. O worker gera as cenas estritamente em sequência e para em `assembling`; render nunca começa automaticamente. `/advance`, `/status` e `/continue` permanecem no runtime somente para compatibilidade/diagnóstico e não aparecem no contrato do Custom GPT. O cliente deve preservar exatamente o token mais recente. Jobs e arquivos são efêmeros e podem ser perdidos em restart/deploy. Consulte [docs/stateless-v3.md](docs/stateless-v3.md) para fluxo, replay, budget guard e segurança.
+A V3.1 usa `/video/projects/start`, um único comando potencialmente pago `/video/projects/generation`, consulta gratuita em `/video/projects/{projectId}/generation/{generationJobId}`, render assíncrono e download temporário. O worker gera as cenas estritamente em sequência; após cada conclusão, extrai o quadro final real e o fornece como quadro inicial da próxima cena por uma URL temporária assinada. Isso preserva continuidade visual sem usar Extend nem alterar o provider. O job para em `assembling`; render nunca começa automaticamente. `/advance`, `/status` e `/continue` permanecem no runtime somente para compatibilidade/diagnóstico e não aparecem no contrato do Custom GPT. O cliente deve preservar exatamente o token mais recente. Jobs, frames e arquivos são efêmeros e podem ser perdidos em restart/deploy. Consulte [docs/stateless-v3.md](docs/stateless-v3.md) para fluxo, replay, budget guard e segurança.
 
 `PROJECT_RENDER_JOB_TTL_SECONDS` retém somente metadata terminal após `completed`/`failed`; nunca remove um job `processing`. `PROJECT_RENDER_MAX_EXECUTION_SECONDS` limita separadamente a execução ativa e usa default de 43.200 segundos, suficiente para o pipeline sequencial máximo sob os timeouts atuais. Ao excedê-lo, o job vira `failed` com `RENDER_EXECUTION_TIMEOUT`, permanece consultável e o middleware tenta abortar downloads/FFmpeg controlados. A retenção de metadata deve ser pelo menos `PROJECT_OUTPUT_TTL_SECONDS + 300` segundos; configuração incompatível impede o startup.
 
@@ -219,35 +220,17 @@ docker compose up -d --build
 
 ## GPT Action
 
-Para a integração V3, importe `custom-gpt-v3-final/OPENAPI-FINAL.yaml`. No GPT Builder configure **Authentication → API Key → Custom**, header `x-api-key`, usando `MIDDLEWARE_API_KEY`. O endpoint binário de download não faz parte das Actions; o GPT recebe uma URL temporária textual pelo status do render.
+Para a integração V3.1, importe o contrato canônico `openapi-gpt.yaml`. O artefato `custom-gpt-v3-final/OPENAPI-FINAL.yaml` é mantido com conteúdo idêntico por teste para impedir divergência entre publicação e runtime. No GPT Builder configure **Authentication → API Key → Custom**, header `x-api-key`, usando `MIDDLEWARE_API_KEY`. O endpoint binário de download não faz parte das Actions; o GPT recebe uma URL temporária textual pelo status do render.
+
+Selecione no Builder um modelo não-Pro que suporte Actions. Actions não ficam disponíveis em Pro mode. Em workspaces administrados, `snapgen-middleware.onrender.com` também precisa estar permitido na allowlist de domínios; uma allowlist que não aceite nenhum domínio impede a execução mesmo quando as 11 operações aparecem no schema.
 
 Privacy Policy pública:
 
 https://snapgen-middleware.onrender.com/privacy
 
-### Instructions V2 para o Custom GPT
+### Instructions para o Custom GPT
 
-```text
-Quando o usuário pedir um vídeo, preserve os parâmetros explicitamente fornecidos.
-
-Chame getVideoModels quando precisar descobrir modelos, capacidades ou combinações compatíveis. Nunca invente capacidades. Se os parâmetros forem incompatíveis, explique a incompatibilidade antes de gerar e ofereça apenas opções retornadas pela API.
-
-Use generateVideo para text-to-video. Quando houver uma URL HTTP(S) válida de imagem e o modelo suportar image-to-video, envie-a em ref_images. Não invente ou altere URLs.
-
-Use extendVideo somente quando o usuário pedir continuação, houver um UUID existente e o modelo informar supportsExtend=true. Não use geração nova como substituto silencioso para extend.
-
-Use createVideoStoryboard para pedidos explícitos de múltiplas cenas quando as restrições de Grok forem atendidas.
-
-Após receber um UUID, informe que a operação foi iniciada. Use getVideoGenerationStatus com o mesmo UUID para consultar o andamento.
-
-Se o status for processing, informe o progresso e continue reutilizando o UUID. Nunca gere novamente apenas porque ainda está processando e nunca repita automaticamente uma operação paga.
-
-Se o status for completed, entregue videoUrl somente quando a API retornar uma URL não nula. Nunca invente uma URL.
-
-Se o status for failed, informe o erro retornado e não afirme que o vídeo foi criado.
-
-Nunca revele ou solicite SNAPGEN_API_KEY. A Action usa somente MIDDLEWARE_API_KEY configurada pelo administrador.
-```
+Use integralmente `custom-gpt-v3-final/INSTRUCTIONS-FINAL.txt`. O checklist de publicação e os testes de Preview ficam no mesmo diretório. Os artefatos de `custom-gpt-v2-final` permanecem apenas como histórico compatível e não devem ser usados para publicar a superfície atual de 11 Actions.
 
 ## Observabilidade e segurança
 

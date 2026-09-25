@@ -5,6 +5,7 @@ import { assertProjectTransition, assertSceneTransition, calculateProjectBudget,
 import { deriveProjectPlan, projectStateSchema, type CreateProjectInput, type ValidatedProjectState } from './project.schemas.js';
 import type { ProjectStateTokenService } from './project-state-token.js';
 import { projectModelProfileRegistry } from './project-model-profile.registry.js';
+import type { SceneReferenceResolver } from './last-frame-continuity.service.js';
 
 export interface RenderResult { handle: string; expiresAt: string }
 export interface ProjectRenderOptions { signal?: AbortSignal; renderJobId?: string }
@@ -41,6 +42,7 @@ export class StatelessProjectService {
     private readonly renderer?: ProjectRenderer,
     private readonly tokenTtlSeconds = 2_592_000,
     private readonly now: () => Date = () => new Date(),
+    private readonly sceneReferences?: SceneReferenceResolver,
   ) {}
 
   start(input: CreateProjectInput): ProjectResponse {
@@ -142,9 +144,20 @@ export class StatelessProjectService {
     if (state.scenes.filter((scene) => scene.status === 'submitting').length !== 1) {
       throw new ApiError(409, 'INVALID_PROJECT_SUBMISSION_STATE', 'Exactly one scene must be reserved for provider submission.');
     }
-    const prompt = pending.continuityInstructions
+    let prompt = pending.continuityInstructions
       ? `${pending.prompt}\n\nContinuity instructions: ${pending.continuityInstructions}`
       : pending.prompt;
+    let referenceImages: string[] = [];
+    if (state.generationStrategy === 'last-frame-chained' && pending.sequence > 1) {
+      if (!this.sceneReferences) {
+        throw new ApiError(503, 'PROJECT_CONTINUITY_UNAVAILABLE', 'Last-frame scene continuity is not configured.');
+      }
+      referenceImages = await this.sceneReferences.referenceImages(state, pending.sequence, requestId);
+      if (referenceImages.length !== 1) {
+        throw new ApiError(502, 'INVALID_CONTINUITY_REFERENCE', 'Exactly one initial-frame reference is required for a chained scene.');
+      }
+      prompt += '\n\nStart-frame continuity: The supplied image is the exact final frame of the previous scene. Begin from that same composition, character appearance, pose, prop placement, lighting, and direction of motion. Continue the described action forward without resetting or replaying it.';
+    }
     try {
       const result = await this.provider.generateVideo({
         prompt,
@@ -152,7 +165,8 @@ export class StatelessProjectService {
         duration: state.segmentDuration,
         resolution: state.resolution,
         aspect_ratio: state.aspectRatio,
-        ref_images: [],
+        ...(referenceImages.length ? { mode_image: 'frame' as const } : {}),
+        ref_images: referenceImages,
       }, requestId);
       state.paidOperations += 1;
       assertSceneTransition('submitting', 'processing');
@@ -234,6 +248,7 @@ export class StatelessProjectService {
   }
 
   authorizeOutput(projectId: string, accessToken: string) { return this.tokens.verifyOutputAccess(accessToken, projectId); }
+  authorizeFrame(projectId: string, accessToken: string) { return this.tokens.verifyFrameAccess(accessToken, projectId); }
 
   private updatedResponse(state: ValidatedProjectState): ProjectResponse {
     const now = this.now();
